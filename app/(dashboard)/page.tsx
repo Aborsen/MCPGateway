@@ -20,13 +20,13 @@ function fmtTime(iso: string): string {
   return new Date(iso).toLocaleString();
 }
 
-export default async function WorkPage() {
+export default async function WorkspacePage() {
   const m = await getDashboardMetrics();
 
   return (
     <>
       <PageHeader
-        title="Work"
+        title="Workspace"
         description="Live overview of users, connectors, and MCP query activity."
       />
       <div className="space-y-6 p-6">
