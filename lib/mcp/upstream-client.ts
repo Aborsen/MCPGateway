@@ -137,22 +137,35 @@ async function fetchRealUpstreamList(connector: Connector): Promise<McpTool[]> {
   return tools;
 }
 
+const UPSTREAM_TIMEOUT_MS = 55_000;
+
 async function callRealUpstream(
   connector: Connector,
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<McpToolResult> {
   const headers = await buildHeaders(connector);
-  const res = await fetch(connector.upstreamUrl, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: Date.now(),
-      method: "tools/call",
-      params: { name: toolName, arguments: args },
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(connector.upstreamUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: Date.now(),
+        method: "tools/call",
+        params: { name: toolName, arguments: args },
+      }),
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
+  } catch (err) {
+    if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")) {
+      throw new UpstreamError(
+        `Upstream timed out after ${UPSTREAM_TIMEOUT_MS / 1000}s — try a more selective query or smaller pageSize`,
+      );
+    }
+    throw err;
+  }
   if (!res.ok) {
     throw new UpstreamError(`Upstream tools/call returned ${res.status}`);
   }
@@ -161,7 +174,23 @@ async function callRealUpstream(
   if ("error" in parsed) {
     throw new UpstreamError(parsed.error.message);
   }
-  return parsed.result as McpToolResult;
+  const result = parsed.result as McpToolResult;
+  if (result?.isError) {
+    const innerText = extractTextFromToolResult(result);
+    throw new UpstreamError(
+      `Upstream tool error: ${innerText || "tool returned isError without text content"}`,
+    );
+  }
+  return result;
+}
+
+function extractTextFromToolResult(result: McpToolResult): string {
+  if (!result?.content || !Array.isArray(result.content)) return "";
+  return result.content
+    .filter((b): b is { type: "text"; text: string } => b?.type === "text" && typeof b.text === "string")
+    .map((b) => b.text)
+    .join(" ")
+    .trim();
 }
 
 function parseMaybeSse(
