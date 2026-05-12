@@ -12,6 +12,9 @@ import {
   Database,
   Search,
   Info,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,9 +34,13 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 import { ConnectionFormDialog, type Connection } from "./connection-form";
 
 export type { Connection };
+
+type SortKey = "name" | "type" | "upstreamUrl" | "toolCount" | "workspaceCount";
+type SortDir = "asc" | "desc";
 
 const TYPE_COLORS: Record<string, string> = {
   jira: "bg-blue-500/20 text-blue-400 border-blue-500/40",
@@ -50,7 +57,18 @@ export function ConnectionsList({ initial }: { initial: Connection[] }) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [usageFilter, setUsageFilter] = useState("all");
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [, startTransition] = useTransition();
+
+  function onSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
 
   const types = useMemo(
     () => Array.from(new Set(initial.map((c) => c.type))).sort(),
@@ -59,7 +77,7 @@ export function ConnectionsList({ initial }: { initial: Connection[] }) {
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
-    return initial.filter((c) => {
+    const rows = initial.filter((c) => {
       if (s) {
         const hay = `${c.name} ${c.slug} ${c.description ?? ""} ${c.upstreamUrl}`.toLowerCase();
         if (!hay.includes(s)) return false;
@@ -69,7 +87,16 @@ export function ConnectionsList({ initial }: { initial: Connection[] }) {
       if (usageFilter === "unused" && c.workspaceCount > 0) return false;
       return true;
     });
-  }, [initial, search, typeFilter, usageFilter]);
+    if (!sortKey) return rows;
+    const sign = sortDir === "asc" ? 1 : -1;
+    const sorted = [...rows].sort((a, b) => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * sign;
+      return String(av).localeCompare(String(bv)) * sign;
+    });
+    return sorted;
+  }, [initial, search, typeFilter, usageFilter, sortKey, sortDir]);
 
   function onAdd() {
     setEditing(null);
@@ -185,11 +212,11 @@ export function ConnectionsList({ initial }: { initial: Connection[] }) {
                 <table className="w-full text-sm">
                   <thead className="bg-muted text-muted-foreground">
                     <tr className="text-left">
-                      <th className="px-4 py-3 font-medium">Name</th>
-                      <th className="px-4 py-3 font-medium">Type</th>
-                      <th className="px-4 py-3 font-medium">Upstream URL</th>
-                      <th className="px-4 py-3 font-medium">Tools</th>
-                      <th className="px-4 py-3 font-medium">Workspaces</th>
+                      <SortHeader column="name" label="Name" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                      <SortHeader column="type" label="Type" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                      <SortHeader column="upstreamUrl" label="Upstream URL" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                      <SortHeader column="toolCount" label="Tools" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                      <SortHeader column="workspaceCount" label="Workspaces" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                       <th className="w-12 px-4 py-3"></th>
                     </tr>
                   </thead>
@@ -274,5 +301,41 @@ export function ConnectionsList({ initial }: { initial: Connection[] }) {
         }}
       />
     </>
+  );
+}
+
+function SortHeader({
+  column,
+  label,
+  sortKey,
+  sortDir,
+  onSort,
+}: {
+  column: SortKey;
+  label: string;
+  sortKey: SortKey | null;
+  sortDir: SortDir;
+  onSort: (k: SortKey) => void;
+}) {
+  const active = sortKey === column;
+  const Icon = active ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+  return (
+    <th className="font-medium">
+      <button
+        onClick={() => onSort(column)}
+        className={cn(
+          "group flex w-full items-center gap-1.5 px-4 py-3 text-left transition-colors hover:text-foreground",
+          active && "text-foreground",
+        )}
+      >
+        <span>{label}</span>
+        <Icon
+          className={cn(
+            "h-3 w-3 transition-opacity",
+            active ? "opacity-100" : "opacity-30 group-hover:opacity-70",
+          )}
+        />
+      </button>
+    </th>
   );
 }
