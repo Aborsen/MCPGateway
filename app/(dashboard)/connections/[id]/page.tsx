@@ -4,7 +4,9 @@ import { ChevronLeft, ExternalLink } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { parseAllowedTables, parsePermissions } from "@/lib/json";
 import { ToolsEditor } from "./tools-editor";
+import { UsedByCard } from "./used-by-card";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +22,29 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
     },
   });
   if (!ds) notFound();
+
+  const workspaces = ds.workspaceDataSources.map((wds) => {
+    const tables = parseAllowedTables(wds.allowedTables);
+    return {
+      id: wds.id,
+      workspaceId: wds.workspaceId,
+      workspaceName: wds.workspace.name,
+      allowedTablesLabel: tables ? `Tables: ${tables.join(", ")}` : "All tables",
+    };
+  });
+
+  const directGrants = ds.directGrants.map((g) => {
+    const perms = parsePermissions(g.permissions);
+    const tables = parseAllowedTables(g.allowedTables);
+    return {
+      id: g.id,
+      userId: g.userId,
+      userName: g.user.name,
+      userEmail: g.user.email,
+      permissionsLabel: perms.join(", "),
+      allowedTablesLabel: tables ? `Tables: ${tables.join(", ")}` : null,
+    };
+  });
 
   return (
     <>
@@ -75,67 +100,7 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-3">
-          <CardHeader>
-            <CardTitle>
-              Used by ({ds.workspaceDataSources.length} workspace{ds.workspaceDataSources.length === 1 ? "" : "s"}, {" "}
-              {ds.directGrants.length} direct grant{ds.directGrants.length === 1 ? "" : "s"})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {ds.workspaceDataSources.length === 0 && ds.directGrants.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Not used yet. Assign it via{" "}
-                <Link href="/workspaces" className="text-primary hover:underline">
-                  Workspaces
-                </Link>{" "}
-                or grant a user direct access via{" "}
-                <Link href="/permissions" className="text-primary hover:underline">
-                  Permissions
-                </Link>
-                .
-              </p>
-            ) : (
-              <>
-                {ds.workspaceDataSources.length > 0 && (
-                  <div>
-                    <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Workspaces</div>
-                    <ul className="space-y-2">
-                      {ds.workspaceDataSources.map((wds) => (
-                        <li key={wds.id} className="flex items-center justify-between rounded-md border border-border p-3">
-                          <Link href={`/workspaces/${wds.workspaceId}`} className="font-medium hover:text-primary">
-                            {wds.workspace.name}
-                          </Link>
-                          <span className="text-xs text-muted-foreground">
-                            {wds.allowedTables ? `Restricted: ${JSON.parse(wds.allowedTables).join(", ")}` : "All tables"}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {ds.directGrants.length > 0 && (
-                  <div>
-                    <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Direct grants</div>
-                    <ul className="space-y-2">
-                      {ds.directGrants.map((g) => (
-                        <li key={g.id} className="flex items-center justify-between rounded-md border border-border p-3">
-                          <Link href={`/users/${g.userId}`} className="font-medium hover:text-primary">
-                            {g.user.name}
-                          </Link>
-                          <span className="text-xs text-muted-foreground">
-                            {JSON.parse(g.permissions).join(", ")}
-                            {g.allowedTables && ` · tables: ${JSON.parse(g.allowedTables).join(", ")}`}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
+        <UsedByCard workspaces={workspaces} directGrants={directGrants} />
       </div>
     </>
   );
