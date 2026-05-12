@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
+import { writeAdminEvent } from "./admin-events";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   session: { strategy: "jwt" },
@@ -44,6 +45,34 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         (session.user as { role: string }).role = token.role as string;
       }
       return session;
+    },
+  },
+  events: {
+    async signIn({ user }) {
+      const id = (user as { id?: string }).id;
+      const email = (user as { email?: string }).email ?? null;
+      const name = (user as { name?: string }).name ?? null;
+      if (!id) return;
+      await writeAdminEvent({
+        actorId: id,
+        targetUserId: id,
+        eventType: "USER_LOGIN",
+        targetType: "user",
+        targetId: id,
+        targetLabel: email ?? name ?? id,
+      });
+    },
+    async signOut(message) {
+      const token = "token" in message ? message.token : null;
+      const userId = (token as { id?: string } | null)?.id;
+      if (!userId) return;
+      await writeAdminEvent({
+        actorId: userId,
+        targetUserId: userId,
+        eventType: "USER_LOGOUT",
+        targetType: "user",
+        targetId: userId,
+      });
     },
   },
 });

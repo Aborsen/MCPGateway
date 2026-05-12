@@ -22,6 +22,8 @@ model User {
   workspaceUsers WorkspaceUser[]
   mcpTokens      UserMcpToken[]
   auditLogs      AuditLog[]
+  eventsActed    AdminEvent[] @relation("AdminEventActor")
+  eventsTargeted AdminEvent[] @relation("AdminEventTargetUser")
 }
 
 model DataSource {
@@ -91,6 +93,24 @@ model UserMcpToken {
   lastUsedAt DateTime?
   revokedAt  DateTime?
   createdAt  DateTime  @default(now())
+}
+
+model AdminEvent {
+  id           String    @id @default(cuid())
+  actorId      String?
+  actor        User?     @relation("AdminEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  targetUserId String?
+  targetUser   User?     @relation("AdminEventTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
+  eventType    String
+  targetType   String?
+  targetId     String?
+  targetLabel  String?
+  detailsJson  String?
+  createdAt    DateTime  @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([eventType, createdAt])
+  @@index([actorId, createdAt])
 }
 
 model AuditLog {

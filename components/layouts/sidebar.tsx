@@ -20,7 +20,7 @@ const NAV_ITEMS = [
   { href: "/connections", label: "Connections", icon: Plug },
   { href: "/permissions", label: "Permissions", icon: ShieldCheck },
   { href: "/workspaces", label: "Workspaces", icon: FolderTree },
-  { href: "/audit-log", label: "Audit Log", icon: FileText },
+  { href: "/logs", label: "Logs", icon: FileText },
   { href: "/users", label: "Users", icon: Users },
   { href: "/chat", label: "AI Chat", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },

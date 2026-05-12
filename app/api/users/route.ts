@@ -3,6 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
+import { writeAdminEvent } from "@/lib/admin-events";
 
 const CreateSchema = z.object({
   email: z.string().email(),
@@ -24,7 +25,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  await requireAdmin();
+  const session = await requireAdmin();
   const body = await request.json();
   const parsed = CreateSchema.safeParse(body);
   if (!parsed.success) {
@@ -38,6 +39,15 @@ export async function POST(request: Request) {
   const passwordHash = await bcrypt.hash(data.password, 10);
   const user = await prisma.user.create({
     data: { email: data.email, name: data.name, role: data.role, passwordHash },
+  });
+  await writeAdminEvent({
+    actorId: session.user.id,
+    targetUserId: user.id,
+    eventType: "USER_CREATED",
+    targetType: "user",
+    targetId: user.id,
+    targetLabel: user.email,
+    details: { email: user.email, name: user.name, role: user.role },
   });
   return NextResponse.json(user, { status: 201 });
 }

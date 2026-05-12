@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatDuration } from "@/lib/utils";
 
-export type AuditEntry = {
+export type QueryEntry = {
   id: string;
   createdAt: string;
   method: string;
@@ -40,7 +40,7 @@ function prettyJson(raw: string): string {
   }
 }
 
-export function AuditRow({ entry }: { entry: AuditEntry }) {
+export function QueryRow({ entry }: { entry: QueryEntry }) {
   const [open, setOpen] = useState(false);
   const isError = entry.status === "ERROR";
 

@@ -35,10 +35,10 @@ const STEPS = [
     description: "Issue a token per user and paste the URL into Claude Code's .mcp.json.",
   },
   {
-    href: "/audit-log",
+    href: "/logs",
     icon: FileText,
-    title: "6. Watch the audit log",
-    description: "Every tool call from Claude Code lands here with full request + response.",
+    title: "6. Watch the logs",
+    description: "Every MCP tool call lands in the Query Log; admin actions land in the Audit Log.",
   },
 ];
 

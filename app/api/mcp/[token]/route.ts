@@ -45,27 +45,68 @@ export async function POST(request: Request, { params }: RouteCtx) {
     include: { user: true },
   });
   if (!tokenRow || tokenRow.revokedAt || tokenRow.user.deletedAt) {
-    return NextResponse.json(
-      jsonRpcError(null, ERROR_CODES.UNAUTHORIZED, "Invalid or revoked token"),
-      { status: 401 },
+    const reason = !tokenRow
+      ? "unknown token"
+      : tokenRow.revokedAt
+        ? "revoked token"
+        : "deleted user";
+    const err = jsonRpcError(null, ERROR_CODES.UNAUTHORIZED, "Invalid or revoked token");
+    after(() =>
+      writeAudit({
+        userId: tokenRow?.userId ?? null,
+        dataSourceId: null,
+        method: "auth",
+        toolName: null,
+        request: { tokenPreview: token.slice(0, 8) + "…" },
+        response: err,
+        status: "ERROR",
+        durationMs: Date.now() - start,
+        errorMessage: `Auth failed: ${reason}`,
+      }),
     );
+    return NextResponse.json(err, { status: 401 });
   }
 
   const userId = tokenRow.userId;
   let body: JsonRpcRequest;
+  let rawBodyText: string;
   try {
-    body = await request.json();
+    rawBodyText = await request.text();
+    body = JSON.parse(rawBodyText);
   } catch {
-    return NextResponse.json(
-      jsonRpcError(null, ERROR_CODES.PARSE_ERROR, "Invalid JSON"),
-      { status: 400 },
+    const err = jsonRpcError(null, ERROR_CODES.PARSE_ERROR, "Invalid JSON");
+    after(() =>
+      writeAudit({
+        userId,
+        dataSourceId: null,
+        method: "malformed",
+        toolName: null,
+        request: { rawPreview: (rawBodyText ?? "").slice(0, 500) },
+        response: err,
+        status: "ERROR",
+        durationMs: Date.now() - start,
+        errorMessage: "Malformed JSON body",
+      }),
     );
+    return NextResponse.json(err, { status: 400 });
   }
 
   if (body.jsonrpc !== "2.0" || typeof body.method !== "string") {
-    return NextResponse.json(
-      jsonRpcError(body.id ?? null, ERROR_CODES.INVALID_REQUEST, "Invalid JSON-RPC request"),
+    const err = jsonRpcError(body.id ?? null, ERROR_CODES.INVALID_REQUEST, "Invalid JSON-RPC request");
+    after(() =>
+      writeAudit({
+        userId,
+        dataSourceId: null,
+        method: "invalid",
+        toolName: null,
+        request: body,
+        response: err,
+        status: "ERROR",
+        durationMs: Date.now() - start,
+        errorMessage: "Body is not a valid JSON-RPC 2.0 request",
+      }),
     );
+    return NextResponse.json(err);
   }
 
   let response: JsonRpcResponse | null = null;
@@ -104,8 +145,21 @@ export async function POST(request: Request, { params }: RouteCtx) {
       }
       case "notifications/initialized":
       case "notifications/cancelled":
-      case "notifications/progress":
+      case "notifications/progress": {
+        after(() =>
+          writeAudit({
+            userId,
+            dataSourceId: null,
+            method: body.method,
+            toolName: null,
+            request: body,
+            response: { accepted: true },
+            status: "OK",
+            durationMs: Date.now() - start,
+          }),
+        );
         return new NextResponse(null, { status: 202 });
+      }
 
       case "ping":
         response = jsonRpcSuccess(body.id ?? null, {});
