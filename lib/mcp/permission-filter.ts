@@ -70,11 +70,16 @@ export async function getToolLevel(
 
 // Heuristic classifier for tools not explicitly seeded in ToolPermission.
 // Matches both snake_case (create_record) and PascalCase (CreateRecord, Objects).
+//
+// Ambiguous verbs (Execute, Run, Send, Trigger, Start, Stop, Cancel, Enable,
+// Disable) are intentionally NOT in the WRITE list — many connectors use
+// "Execute" for SELECT-style queries (Skyvia, generic SQL bridges). Admins
+// can override per-tool by seeding the ToolPermission table.
 export function classifyToolByName(name: string): PermissionLevel {
   const n = name.toLowerCase().replace(/[^a-z]/g, "_");
   if (/(^|_)(delete|drop|remove|destroy|purge|truncate)(_|$)/.test(n)) return "delete";
   if (
-    /(^|_)(create|update|upsert|insert|set|add|write|modify|transition|assign|convert|merge|patch|edit|put|post|run|execute|send|cancel|approve|reject|publish|unpublish|archive|restore|enable|disable|start|stop|trigger)(_|$)/.test(
+    /(^|_)(create|update|upsert|insert|set|add|write|modify|transition|assign|convert|merge|patch|edit|put|post|approve|reject|publish|unpublish|archive|restore)(_|$)/.test(
       n,
     )
   ) {
