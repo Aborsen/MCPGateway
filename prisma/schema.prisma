@@ -16,6 +16,7 @@ model User {
   name         String
   passwordHash String
   role         String    @default("USER")
+  mcpUid       String?   @unique
   createdAt    DateTime  @default(now())
   deletedAt    DateTime?
 
@@ -25,6 +26,23 @@ model User {
   eventsActed    AdminEvent[] @relation("AdminEventActor")
   eventsTargeted AdminEvent[] @relation("AdminEventTargetUser")
   directGrants   UserDataSourceAccess[]
+}
+
+model OidcModel {
+  id         String    @id
+  model      String
+  payload    Json
+  grantId    String?
+  userCode   String?
+  uid        String?
+  expiresAt  DateTime?
+  consumedAt DateTime?
+
+  @@index([model])
+  @@index([grantId])
+  @@index([userCode])
+  @@index([uid])
+  @@index([expiresAt])
 }
 
 model DataSource {
