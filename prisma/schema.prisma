@@ -1,0 +1,113 @@
+// AI Connectivity — Prisma schema
+// SQLite used for prototype convenience. For production, swap provider to "postgresql" and re-migrate.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  role         String    @default("USER")
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+
+  workspaceUsers WorkspaceUser[]
+  mcpTokens      UserMcpToken[]
+  auditLogs      AuditLog[]
+}
+
+model DataSource {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  type            String
+  upstreamUrl     String
+  configEncrypted String?
+  description     String?
+  createdAt       DateTime @default(now())
+
+  toolPermissions      ToolPermission[]
+  workspaceDataSources WorkspaceDataSource[]
+  auditLogs            AuditLog[]
+}
+
+model ToolPermission {
+  id           String     @id @default(cuid())
+  dataSourceId String
+  dataSource   DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+  toolName     String
+  level        String
+
+  @@unique([dataSourceId, toolName])
+}
+
+model Workspace {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
+
+  dataSources WorkspaceDataSource[]
+  users       WorkspaceUser[]
+}
+
+model WorkspaceDataSource {
+  id            String     @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  dataSourceId  String
+  dataSource    DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+  allowedTables String?
+
+  @@unique([workspaceId, dataSourceId])
+}
+
+model WorkspaceUser {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permissions String
+
+  @@unique([workspaceId, userId])
+}
+
+model UserMcpToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  label      String?
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model AuditLog {
+  id           String      @id @default(cuid())
+  userId       String?
+  user         User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  dataSourceId String?
+  dataSource   DataSource? @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
+  method       String
+  toolName     String?
+  requestJson  String
+  responseJson String
+  status       String
+  durationMs   Int
+  errorMessage String?
+  createdAt    DateTime    @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([createdAt])
+}
