@@ -99,7 +99,7 @@ export function BulkBar({ kind, subjectIds, subjectLabel, users, dataSources, on
         <div className="flex-1">
           <div className="text-sm font-semibold">Bulk: {subjectLabel} selected</div>
           <div className="text-xs text-muted-foreground">
-            Grants below create direct grants on the {counterpartNoun} you pick. Workspace assignments are unaffected.
+            Grants below create direct grants on the {counterpartNoun} you pick. Team assignments are unaffected.
           </div>
         </div>
       </div>

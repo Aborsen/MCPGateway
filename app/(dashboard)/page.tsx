@@ -11,16 +11,16 @@ const STEPS = [
     description: "Configure an upstream MCP server (Jira, HubSpot, Salesforce, Zoho, Postgres).",
   },
   {
-    href: "/workspaces",
+    href: "/teams",
     icon: FolderTree,
-    title: "2. Create a workspace",
+    title: "2. Create a team",
     description: "Attach data sources and optionally restrict access to specific tables.",
   },
   {
     href: "/users",
     icon: Users,
     title: "3. Invite users",
-    description: "Add team members and assign them to workspaces with read/write/delete permissions.",
+    description: "Add team members and assign them to teams with read/write/delete permissions.",
   },
   {
     href: "/permissions",
@@ -35,9 +35,9 @@ const STEPS = [
     description: "Issue a token per user and paste the URL into Claude Code's .mcp.json.",
   },
   {
-    href: "/logs",
+    href: "/audit",
     icon: FileText,
-    title: "6. Watch the logs",
+    title: "6. Watch the audit",
     description: "Every MCP tool call lands in the Query Log; admin actions land in the Audit Log.",
   },
 ];

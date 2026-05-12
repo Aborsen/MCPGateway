@@ -8,7 +8,7 @@ export default function PermissionsPage() {
     <>
       <PageHeader
         title="Permissions"
-        description="Manage who can access which connection. Workspace assignments and direct grants are combined."
+        description="Manage who can access which connection. Team assignments and direct grants are combined."
       />
       <PermissionsView />
     </>

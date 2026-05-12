@@ -31,11 +31,13 @@ export function InlinePermRow({
 }) {
   const directSource = cell?.sources.find((s) => s.kind === "direct");
   const workspaceSources = cell?.sources.filter((s) => s.kind === "workspace") ?? [];
+  const workspaceOnly = !directSource && workspaceSources.length > 0;
   const [busy, setBusy] = useState(false);
   const effective = new Set<PermissionLevel>(cell?.permissions ?? []);
   const directPerms = new Set<PermissionLevel>(directSource?.permissions ?? []);
 
   async function toggleDirect(p: PermissionLevel) {
+    if (workspaceOnly) return;
     const next = new Set(directPerms);
     if (next.has(p)) next.delete(p);
     else next.add(p);
@@ -91,19 +93,23 @@ export function InlinePermRow({
             <button
               key={p}
               onClick={() => toggleDirect(p)}
-              disabled={busy}
+              disabled={busy || workspaceOnly}
               title={
-                isDirect
-                  ? `Direct grant: ${LEVEL_LABEL[p]}`
-                  : isEffective
-                    ? `Via workspace: ${LEVEL_LABEL[p]} (click to add direct grant)`
-                    : `Click to grant ${LEVEL_LABEL[p]}`
+                workspaceOnly
+                  ? `Managed by Team — edit on the team page`
+                  : isDirect
+                    ? `Direct grant: ${LEVEL_LABEL[p]}`
+                    : isEffective
+                      ? `Via team: ${LEVEL_LABEL[p]} (click to add direct grant)`
+                      : `Click to grant ${LEVEL_LABEL[p]}`
               }
               className={cn(
                 "inline-flex h-7 w-[88px] items-center justify-center gap-1 rounded-md border px-2 text-[11px] font-medium uppercase tracking-wide transition-colors",
                 isDirect && "border-primary bg-primary text-primary-foreground",
-                !isDirect && isEffective && "border-success/60 bg-success/15 text-success",
-                !isDirect && !isEffective && "border-border text-muted-foreground hover:bg-muted",
+                !isDirect && isEffective && !workspaceOnly && "border-success/60 bg-success/15 text-success",
+                !isDirect && isEffective && workspaceOnly && "border-border bg-muted/40 text-muted-foreground cursor-not-allowed",
+                !isDirect && !isEffective && !workspaceOnly && "border-border text-muted-foreground hover:bg-muted",
+                !isDirect && !isEffective && workspaceOnly && "border-border/60 text-muted-foreground/60 cursor-not-allowed",
                 busy && "opacity-60",
               )}
             >

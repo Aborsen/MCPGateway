@@ -79,15 +79,15 @@ export default async function UserDetailPage({ params }: PageProps) {
 
         <Card>
           <CardHeader>
-            <CardTitle>Workspace assignments</CardTitle>
-            <CardDescription>Workspaces this user can access via MCP.</CardDescription>
+            <CardTitle>Team assignments</CardTitle>
+            <CardDescription>Teams this user can access via MCP.</CardDescription>
           </CardHeader>
           <CardContent>
             {user.workspaceUsers.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Not assigned to any workspaces yet.{" "}
-                <Link href="/workspaces" className="text-primary hover:underline">
-                  Go to workspaces
+                Not assigned to any teams yet.{" "}
+                <Link href="/teams" className="text-primary hover:underline">
+                  Go to teams
                 </Link>{" "}
                 to add this user.
               </p>
@@ -99,7 +99,7 @@ export default async function UserDetailPage({ params }: PageProps) {
                     <li key={wu.id} className="rounded-md border border-border p-3">
                       <div className="flex items-center justify-between">
                         <Link
-                          href={`/workspaces/${wu.workspaceId}`}
+                          href={`/teams/${wu.workspaceId}`}
                           className="font-medium hover:text-primary"
                         >
                           {wu.workspace.name}

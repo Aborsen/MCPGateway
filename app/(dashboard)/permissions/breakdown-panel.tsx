@@ -118,11 +118,11 @@ export function BreakdownPanel({
       <div className="flex-1 overflow-y-auto px-5 py-4">
         <section className="space-y-2">
           <div className="text-xs uppercase tracking-wide text-muted-foreground">
-            Workspace contributions
+            Team contributions
           </div>
           {workspaceSources.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              No workspace assignment grants access to this connection.
+              No team assignment grants access to this connection.
             </p>
           ) : (
             <ul className="space-y-2">

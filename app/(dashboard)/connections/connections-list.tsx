@@ -222,7 +222,7 @@ export function ConnectionsList({ initial }: { initial: Connection[] }) {
                       <SortHeader column="type" label="Type" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                       <SortHeader column="upstreamUrl" label="Upstream URL" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                       <SortHeader column="toolCount" label="Tools" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-                      <SortHeader column="workspaceCount" label="Workspaces" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                      <SortHeader column="workspaceCount" label="Teams" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                       <th className="w-12 px-4 py-3"></th>
                     </tr>
                   </thead>

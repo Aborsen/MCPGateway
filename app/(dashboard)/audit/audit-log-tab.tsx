@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { RefreshCcw, ChevronDown, ChevronRight, LogIn, LogOut, UserPlus, UserMinus, UserCog, KeyRound, Shield } from "lucide-react";
+import { Download, RefreshCcw, ChevronDown, ChevronRight, LogIn, LogOut, UserPlus, UserMinus, UserCog, KeyRound, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { downloadCsv, rowsToCsv, type CsvColumn } from "@/lib/csv";
 
 type Option = { id: string; name: string };
 
@@ -86,9 +87,25 @@ export function AuditLogTab({ users }: { users: Array<{ id: string; name: string
     void load();
   }, [load]);
 
+  function onExport() {
+    const columns: CsvColumn<EventEntry>[] = [
+      { header: "Time", get: (r) => r.createdAt },
+      { header: "Event Type", get: (r) => r.eventType },
+      { header: "Actor", get: (r) => r.actor?.name ?? "" },
+      { header: "Actor Email", get: (r) => r.actor?.email ?? "" },
+      { header: "Target Type", get: (r) => r.targetType ?? "" },
+      { header: "Target Label", get: (r) => r.targetLabel ?? "" },
+      { header: "Target User", get: (r) => r.targetUser?.name ?? "" },
+      { header: "Details", get: (r) => r.detailsJson ?? "" },
+    ];
+    const csv = rowsToCsv(entries, columns);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    downloadCsv(`audit-log-${stamp}.csv`, csv);
+  }
+
   return (
-    <>
-      <div className="border-b border-border bg-card/30 px-6 py-4">
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="shrink-0 border-b border-border bg-card/30 px-6 py-4">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-wrap items-end gap-4">
             <div className="space-y-1.5">
@@ -138,16 +155,22 @@ export function AuditLogTab({ users }: { users: Array<{ id: string; name: string
               </Select>
             </div>
           </div>
-          <Button variant="outline" onClick={load} disabled={loading}>
-            <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={onExport} disabled={entries.length === 0}>
+              <Download className="h-4 w-4" />
+              Export CSV
+            </Button>
+            <Button variant="outline" onClick={load} disabled={loading}>
+              <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          </div>
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="flex-1 overflow-auto">
         <table className="w-full text-sm">
-          <thead className="border-b border-border bg-muted/40 text-muted-foreground">
+          <thead className="sticky top-0 z-10 border-b border-border bg-muted/40 text-muted-foreground">
             <tr className="text-left">
               <th className="px-6 py-3 font-medium">Time</th>
               <th className="px-6 py-3 font-medium">Event Type</th>
@@ -168,7 +191,7 @@ export function AuditLogTab({ users }: { users: Array<{ id: string; name: string
           </tbody>
         </table>
       </div>
-    </>
+    </div>
   );
 }
 

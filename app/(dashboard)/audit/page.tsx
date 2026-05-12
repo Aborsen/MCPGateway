@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/db";
-import { LogsView } from "./logs-view";
+import { AuditView } from "./audit-view";
 
 export const dynamic = "force-dynamic";
 
-export default async function LogsPage() {
+export default async function AuditPage() {
   const [users, dataSources] = await Promise.all([
     prisma.user.findMany({
       where: { deletedAt: null },
@@ -16,5 +16,5 @@ export default async function LogsPage() {
     }),
   ]);
 
-  return <LogsView users={users} dataSources={dataSources} />;
+  return <AuditView users={users} dataSources={dataSources} />;
 }

@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -37,6 +39,35 @@
 
 :root {
   --radius: 0.5rem;
+  --background: oklch(0.99 0 0);
+  --foreground: oklch(0.18 0.01 250);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.01 250);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.01 250);
+  --primary: oklch(0.62 0.19 50);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.96 0.005 250);
+  --secondary-foreground: oklch(0.18 0.01 250);
+  --muted: oklch(0.96 0.005 250);
+  --muted-foreground: oklch(0.50 0.01 250);
+  --accent: oklch(0.95 0.01 250);
+  --accent-foreground: oklch(0.18 0.01 250);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.55 0.18 145);
+  --success-foreground: oklch(0.99 0 0);
+  --border: oklch(0.90 0.005 250);
+  --input: oklch(0.96 0.005 250);
+  --ring: oklch(0.62 0.19 50);
+  --sidebar: oklch(0.97 0.005 250);
+  --sidebar-foreground: oklch(0.20 0.01 250);
+  --sidebar-accent: oklch(0.92 0.01 250);
+  --sidebar-accent-foreground: oklch(0.18 0.01 250);
+  --sidebar-border: oklch(0.88 0.005 250);
+}
+
+.dark {
   --background: oklch(0.15 0.01 250);
   --foreground: oklch(0.95 0 0);
   --card: oklch(0.18 0.01 250);

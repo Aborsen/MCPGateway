@@ -29,14 +29,14 @@ export default async function WorkspaceDetailPage({ params }: PageProps) {
     <>
       <PageHeader
         title={workspace.name}
-        description={workspace.description ?? "Workspace details"}
+        description={workspace.description ?? "Team details"}
         actions={
           <Link
-            href="/workspaces"
+            href="/teams"
             className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
           >
             <ChevronLeft className="h-4 w-4" />
-            Back to workspaces
+            Back to teams
           </Link>
         }
       />
