@@ -121,7 +121,7 @@ export function ToolsEditor({ dataSourceId }: { dataSourceId: string }) {
                 </tr>
               ) : (
                 data.tools.map((t) => (
-                  <tr key={t.name} className="border-t border-border">
+                  <tr key={t.name} className="border-b border-border">
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
                         <code className="font-mono text-xs">{t.name}</code>

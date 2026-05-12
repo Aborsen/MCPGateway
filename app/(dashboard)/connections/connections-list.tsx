@@ -43,11 +43,14 @@ type SortKey = "name" | "type" | "upstreamUrl" | "toolCount" | "workspaceCount";
 type SortDir = "asc" | "desc";
 
 const TYPE_COLORS: Record<string, string> = {
-  jira: "bg-blue-500/20 text-blue-400 border-blue-500/40",
-  zoho: "bg-red-500/20 text-red-400 border-red-500/40",
-  hubspot: "bg-orange-500/20 text-orange-400 border-orange-500/40",
-  salesforce: "bg-sky-500/20 text-sky-400 border-sky-500/40",
-  postgres: "bg-indigo-500/20 text-indigo-400 border-indigo-500/40",
+  marketing: "bg-pink-500/20 text-pink-400 border-pink-500/40",
+  sales: "bg-emerald-500/20 text-emerald-400 border-emerald-500/40",
+  support: "bg-sky-500/20 text-sky-400 border-sky-500/40",
+  operations: "bg-amber-500/20 text-amber-400 border-amber-500/40",
+  performance: "bg-violet-500/20 text-violet-400 border-violet-500/40",
+  finance: "bg-yellow-500/20 text-yellow-400 border-yellow-500/40",
+  database: "bg-indigo-500/20 text-indigo-400 border-indigo-500/40",
+  other: "bg-slate-500/20 text-slate-400 border-slate-500/40",
 };
 
 export function ConnectionsList({ initial }: { initial: Connection[] }) {

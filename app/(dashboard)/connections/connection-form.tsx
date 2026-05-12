@@ -36,13 +36,14 @@ export type Connection = {
 };
 
 const KNOWN_TYPES = [
-  { value: "jira", label: "Jira" },
-  { value: "zoho", label: "Zoho CRM" },
-  { value: "hubspot", label: "HubSpot" },
-  { value: "salesforce", label: "Salesforce" },
-  { value: "postgres", label: "PostgreSQL" },
-  { value: "mysql", label: "MySQL" },
-  { value: "rest", label: "Generic REST/MCP" },
+  { value: "marketing", label: "Marketing" },
+  { value: "sales", label: "Sales" },
+  { value: "support", label: "Support" },
+  { value: "operations", label: "Operations" },
+  { value: "performance", label: "Performance" },
+  { value: "finance", label: "Finance" },
+  { value: "database", label: "Database" },
+  { value: "other", label: "Other" },
 ];
 
 type AuthScheme = "bearer" | "customHeaders" | "none";
