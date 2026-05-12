@@ -17,12 +17,13 @@ export function truncateJson(value: unknown, maxBytes = 8192): string {
   });
 }
 
-export function parsePermissions(json: string): Array<"read" | "write" | "delete"> {
+const VALID_PERMS = new Set(["select", "insert", "update", "delete", "execute"]);
+type Perm = "select" | "insert" | "update" | "delete" | "execute";
+
+export function parsePermissions(json: string): Perm[] {
   const arr = safeJsonParse<unknown>(json, []);
   if (!Array.isArray(arr)) return [];
-  return arr.filter((p): p is "read" | "write" | "delete" =>
-    p === "read" || p === "write" || p === "delete",
-  );
+  return arr.filter((p): p is Perm => typeof p === "string" && VALID_PERMS.has(p));
 }
 
 export function parseAllowedTables(json: string | null | undefined): string[] | null {

@@ -5,7 +5,7 @@ import { requireAdmin } from "@/lib/auth";
 import { writeAdminEvent } from "@/lib/admin-events";
 
 const BodySchema = z.object({
-  permissions: z.array(z.enum(["read", "write", "delete"])),
+  permissions: z.array(z.enum(["select", "insert", "update", "delete", "execute"])),
   allowedTables: z.array(z.string()).nullable().optional(),
 });
 

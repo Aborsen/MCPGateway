@@ -324,7 +324,13 @@ async function aggregateTools(access: UserAccess[]) {
 
       return upstreamTools
         .filter((t) => {
-          const seeded = levels.get(t.name) as "read" | "write" | "delete" | undefined;
+          const seeded = levels.get(t.name) as
+            | "select"
+            | "insert"
+            | "update"
+            | "delete"
+            | "execute"
+            | undefined;
           const required = seeded ?? classifyToolByName(t.name);
           if (!a.permissions.has(required)) return false;
           if (a.allowedTables && isRawQueryTool(t.name)) return false;

@@ -149,9 +149,11 @@ export function ToolsEditor({ dataSourceId }: { dataSourceId: string }) {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="READ">READ</SelectItem>
-                          <SelectItem value="WRITE">WRITE</SelectItem>
+                          <SelectItem value="SELECT">SELECT</SelectItem>
+                          <SelectItem value="INSERT">INSERT</SelectItem>
+                          <SelectItem value="UPDATE">UPDATE</SelectItem>
                           <SelectItem value="DELETE">DELETE</SelectItem>
+                          <SelectItem value="EXECUTE">EXECUTE</SelectItem>
                         </SelectContent>
                       </Select>
                     </td>

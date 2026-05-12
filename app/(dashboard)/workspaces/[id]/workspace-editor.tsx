@@ -14,15 +14,17 @@ import { Badge } from "@/components/ui/badge";
 type DataSourceOption = { id: string; name: string; type: string };
 type UserOption = { id: string; name: string; email: string };
 
+type PermLevel = "select" | "insert" | "update" | "delete" | "execute";
+
 export type WorkspaceData = {
   id: string;
   name: string;
   description: string | null;
   dataSources: Array<{ dataSourceId: string; allowedTables: string[] | null }>;
-  users: Array<{ userId: string; permissions: Array<"read" | "write" | "delete"> }>;
+  users: Array<{ userId: string; permissions: PermLevel[] }>;
 };
 
-const PERMS = ["read", "write", "delete"] as const;
+const PERMS = ["select", "insert", "update", "delete", "execute"] as const;
 
 export function WorkspaceEditor({
   workspace,
@@ -70,11 +72,11 @@ export function WorkspaceEditor({
     if (exists) {
       setUsers(users.filter((u) => u.userId !== userId));
     } else {
-      setUsers([...users, { userId, permissions: ["read"] }]);
+      setUsers([...users, { userId, permissions: ["select"] }]);
     }
   }
 
-  function togglePermission(userId: string, perm: "read" | "write" | "delete") {
+  function togglePermission(userId: string, perm: PermLevel) {
     setUsers(
       users.map((u) => {
         if (u.userId !== userId) return u;

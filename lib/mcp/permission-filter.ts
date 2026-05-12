@@ -149,24 +149,33 @@ export async function getToolLevel(
   return classifyToolByName(toolName);
 }
 
-// Heuristic classifier for tools not explicitly seeded/recorded in ToolPermission.
+// Heuristic classifier for tools not explicitly recorded in ToolPermission.
+// Maps tool names to SQL-flavored verbs: select | insert | update | delete | execute.
 // Matches both snake_case (create_record) and PascalCase (CreateRecord, Objects).
-//
-// Ambiguous verbs (Execute, Run, Send, Trigger, Start, Stop, Cancel, Enable,
-// Disable) are intentionally NOT in the WRITE list — many connectors use
-// "Execute" for SELECT-style queries (Skyvia, generic SQL bridges). Admins
-// can override per-tool by setting the ToolPermission row to classifiedBy="admin".
+// Admins can override per-tool via the Connection detail page (classifiedBy="admin").
 export function classifyToolByName(name: string): PermissionLevel {
   const n = name.toLowerCase().replace(/[^a-z]/g, "_");
+
+  // DELETE: destructive operations
   if (/(^|_)(delete|drop|remove|destroy|purge|truncate)(_|$)/.test(n)) return "delete";
+
+  // EXECUTE: arbitrary code/SQL/procedure execution (Skyvia's Execute, SQL run_apex, etc.)
+  if (/(^|_)(execute|run|call|invoke|exec|eval)(_|$)/.test(n)) return "execute";
+
+  // INSERT: pure creation
+  if (/(^|_)(insert|create|add|new|post)(_|$)/.test(n)) return "insert";
+
+  // UPDATE: mutation of existing rows/records (upsert leans update; transition/assign/etc.)
   if (
-    /(^|_)(create|update|upsert|insert|set|add|write|modify|transition|assign|convert|merge|patch|edit|put|post|approve|reject|publish|unpublish|archive|restore)(_|$)/.test(
+    /(^|_)(update|upsert|modify|edit|patch|put|set|write|transition|assign|convert|merge|approve|reject|publish|unpublish|archive|restore)(_|$)/.test(
       n,
     )
   ) {
-    return "write";
+    return "update";
   }
-  return "read";
+
+  // Default: read-only inspection (list_*, get_*, search_*, describe_*, query, etc.)
+  return "select";
 }
 
 const TABLE_ARG_KEYS = ["table_name", "table", "module", "object_name", "objectName", "resource"];

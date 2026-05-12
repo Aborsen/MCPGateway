@@ -129,12 +129,12 @@ async function main() {
       {
         workspaceId: salesWorkspace.id,
         userId: alice.id,
-        permissions: JSON.stringify(["read", "write"]),
+        permissions: JSON.stringify(["select", "insert", "update"]),
       },
       {
         workspaceId: salesWorkspace.id,
         userId: bob.id,
-        permissions: JSON.stringify(["read"]),
+        permissions: JSON.stringify(["select"]),
       },
     ],
   });
@@ -159,12 +159,12 @@ async function main() {
       {
         workspaceId: engineeringWorkspace.id,
         userId: carol.id,
-        permissions: JSON.stringify(["read", "write", "delete"]),
+        permissions: JSON.stringify(["select", "insert", "update", "delete", "execute"]),
       },
       {
         workspaceId: engineeringWorkspace.id,
         userId: admin.id,
-        permissions: JSON.stringify(["read", "write", "delete"]),
+        permissions: JSON.stringify(["select", "insert", "update", "delete", "execute"]),
       },
     ],
   });

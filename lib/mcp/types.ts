@@ -46,4 +46,12 @@ export const ERROR_CODES = {
   UPSTREAM_ERROR: -32010,
 } as const;
 
-export type PermissionLevel = "read" | "write" | "delete";
+export type PermissionLevel = "select" | "insert" | "update" | "delete" | "execute";
+
+export const ALL_PERMISSION_LEVELS: PermissionLevel[] = [
+  "select",
+  "insert",
+  "update",
+  "delete",
+  "execute",
+];

@@ -27,7 +27,7 @@ export function BulkBar({ kind, subjectIds, subjectLabel, users, dataSources, on
   // When kind=users, subjectIds are user ids. We pick ONE dataSource to grant against.
   // When kind=dataSources, subjectIds are data source ids. We pick ONE user.
   const [counterpartId, setCounterpartId] = useState<string>("");
-  const [perms, setPerms] = useState<Set<PermissionLevel>>(new Set(["read"]));
+  const [perms, setPerms] = useState<Set<PermissionLevel>>(new Set(["select"]));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);

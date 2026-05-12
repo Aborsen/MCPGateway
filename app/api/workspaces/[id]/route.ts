@@ -18,7 +18,7 @@ const UpdateSchema = z.object({
     .array(
       z.object({
         userId: z.string(),
-        permissions: z.array(z.enum(["read", "write", "delete"])),
+        permissions: z.array(z.enum(["select", "insert", "update", "delete", "execute"])),
       }),
     )
     .optional(),

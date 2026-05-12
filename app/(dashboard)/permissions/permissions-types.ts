@@ -1,4 +1,4 @@
-export type PermissionLevel = "read" | "write" | "delete";
+export type PermissionLevel = "select" | "insert" | "update" | "delete" | "execute";
 
 export type GrantSource =
   | {
@@ -31,7 +31,24 @@ export type MatrixPayload = {
   grants: GrantCell[];
 };
 
-export const LEVELS: PermissionLevel[] = ["read", "write", "delete"];
+export const LEVELS: PermissionLevel[] = ["select", "insert", "update", "delete", "execute"];
+
+// Short single-letter labels used in the dense matrix pills.
+export const LEVEL_SHORT: Record<PermissionLevel, string> = {
+  select: "S",
+  insert: "I",
+  update: "U",
+  delete: "D",
+  execute: "E",
+};
+
+export const LEVEL_LABEL: Record<PermissionLevel, string> = {
+  select: "Select",
+  insert: "Insert",
+  update: "Update",
+  delete: "Delete",
+  execute: "Execute",
+};
 
 export function getCell(
   grants: GrantCell[],

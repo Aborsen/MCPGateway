@@ -5,7 +5,7 @@ import { requireAdmin } from "@/lib/auth";
 import { writeAdminEvent } from "@/lib/admin-events";
 
 const BodySchema = z.object({
-  level: z.enum(["READ", "WRITE", "DELETE"]),
+  level: z.enum(["SELECT", "INSERT", "UPDATE", "DELETE", "EXECUTE"]),
 });
 
 type RouteCtx = { params: Promise<{ id: string; toolName: string }> };
