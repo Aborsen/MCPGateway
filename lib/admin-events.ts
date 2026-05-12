@@ -8,7 +8,10 @@ export type AdminEventType =
   | "USER_UPDATED"
   | "USER_DELETED"
   | "USER_PASSWORD_CHANGED"
-  | "USER_ROLE_CHANGED";
+  | "USER_ROLE_CHANGED"
+  | "USER_DATA_SOURCE_ACCESS_CHANGED"
+  | "USER_DATA_SOURCE_ACCESS_REVOKED"
+  | "TOOL_LEVEL_OVERRIDDEN";
 
 export type AdminEventInput = {
   actorId?: string | null;
@@ -46,4 +49,7 @@ export const EVENT_LABELS: Record<AdminEventType, string> = {
   USER_DELETED: "User Removed",
   USER_PASSWORD_CHANGED: "Password Changed",
   USER_ROLE_CHANGED: "Role Changed",
+  USER_DATA_SOURCE_ACCESS_CHANGED: "Direct Grant Changed",
+  USER_DATA_SOURCE_ACCESS_REVOKED: "Direct Grant Revoked",
+  TOOL_LEVEL_OVERRIDDEN: "Tool Level Overridden",
 };

@@ -24,6 +24,7 @@ model User {
   auditLogs      AuditLog[]
   eventsActed    AdminEvent[] @relation("AdminEventActor")
   eventsTargeted AdminEvent[] @relation("AdminEventTargetUser")
+  directGrants   UserDataSourceAccess[]
 }
 
 model DataSource {
@@ -39,6 +40,7 @@ model DataSource {
   toolPermissions      ToolPermission[]
   workspaceDataSources WorkspaceDataSource[]
   auditLogs            AuditLog[]
+  directGrants         UserDataSourceAccess[]
 }
 
 model ToolPermission {
@@ -47,8 +49,25 @@ model ToolPermission {
   dataSource   DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
   toolName     String
   level        String
+  classifiedBy String     @default("heuristic")
+  discoveredAt DateTime   @default(now())
+  lastSeenAt   DateTime?
 
   @@unique([dataSourceId, toolName])
+}
+
+model UserDataSourceAccess {
+  id            String     @id @default(cuid())
+  userId        String
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dataSourceId  String
+  dataSource    DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+  permissions   String
+  allowedTables String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@unique([userId, dataSourceId])
 }
 
 model Workspace {

@@ -3,8 +3,8 @@ import Link from "next/link";
 import { ChevronLeft, ExternalLink } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/layouts/page-header";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ToolsEditor } from "./tools-editor";
 
 export const dynamic = "force-dynamic";
 
@@ -15,17 +15,11 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
   const ds = await prisma.dataSource.findUnique({
     where: { id },
     include: {
-      toolPermissions: { orderBy: [{ level: "asc" }, { toolName: "asc" }] },
       workspaceDataSources: { include: { workspace: true } },
+      directGrants: { include: { user: true } },
     },
   });
   if (!ds) notFound();
-
-  const grouped = {
-    READ: ds.toolPermissions.filter((t) => t.level === "READ"),
-    WRITE: ds.toolPermissions.filter((t) => t.level === "WRITE"),
-    DELETE: ds.toolPermissions.filter((t) => t.level === "DELETE"),
-  };
 
   return (
     <>
@@ -71,71 +65,74 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
 
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Tools ({ds.toolPermissions.length})</CardTitle>
+            <CardTitle>Tools</CardTitle>
             <CardDescription>
-              Pre-classified by permission level. Unknown tools default to <code>write</code>.
+              Discovered live from the upstream. Levels are auto-classified; click a dropdown to override.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {(["READ", "WRITE", "DELETE"] as const).map((level) => (
-                <div key={level}>
-                  <div className="mb-2 flex items-center gap-2">
-                    <Badge variant={level === "DELETE" ? "destructive" : level === "WRITE" ? "default" : "success"}>
-                      {level}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {grouped[level].length} tool{grouped[level].length === 1 ? "" : "s"}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {grouped[level].map((t) => (
-                      <code
-                        key={t.id}
-                        className="rounded bg-muted px-2 py-0.5 font-mono text-xs"
-                      >
-                        {t.toolName}
-                      </code>
-                    ))}
-                    {grouped[level].length === 0 && (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <ToolsEditor dataSourceId={ds.id} />
           </CardContent>
         </Card>
 
         <Card className="lg:col-span-3">
           <CardHeader>
-            <CardTitle>Workspaces using this connection ({ds.workspaceDataSources.length})</CardTitle>
+            <CardTitle>
+              Used by ({ds.workspaceDataSources.length} workspace{ds.workspaceDataSources.length === 1 ? "" : "s"}, {" "}
+              {ds.directGrants.length} direct grant{ds.directGrants.length === 1 ? "" : "s"})
+            </CardTitle>
           </CardHeader>
-          <CardContent>
-            {ds.workspaceDataSources.length === 0 ? (
+          <CardContent className="space-y-3">
+            {ds.workspaceDataSources.length === 0 && ds.directGrants.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Not used in any workspace yet. Assign it via the{" "}
+                Not used yet. Assign it via{" "}
                 <Link href="/workspaces" className="text-primary hover:underline">
                   Workspaces
                 </Link>{" "}
-                page.
+                or grant a user direct access via{" "}
+                <Link href="/permissions" className="text-primary hover:underline">
+                  Permissions
+                </Link>
+                .
               </p>
             ) : (
-              <ul className="space-y-2">
-                {ds.workspaceDataSources.map((wds) => (
-                  <li key={wds.id} className="flex items-center justify-between rounded-md border border-border p-3">
-                    <Link
-                      href={`/workspaces/${wds.workspaceId}`}
-                      className="font-medium hover:text-primary"
-                    >
-                      {wds.workspace.name}
-                    </Link>
-                    <span className="text-xs text-muted-foreground">
-                      {wds.allowedTables ? `Restricted: ${JSON.parse(wds.allowedTables).join(", ")}` : "All tables"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <>
+                {ds.workspaceDataSources.length > 0 && (
+                  <div>
+                    <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Workspaces</div>
+                    <ul className="space-y-2">
+                      {ds.workspaceDataSources.map((wds) => (
+                        <li key={wds.id} className="flex items-center justify-between rounded-md border border-border p-3">
+                          <Link href={`/workspaces/${wds.workspaceId}`} className="font-medium hover:text-primary">
+                            {wds.workspace.name}
+                          </Link>
+                          <span className="text-xs text-muted-foreground">
+                            {wds.allowedTables ? `Restricted: ${JSON.parse(wds.allowedTables).join(", ")}` : "All tables"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {ds.directGrants.length > 0 && (
+                  <div>
+                    <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Direct grants</div>
+                    <ul className="space-y-2">
+                      {ds.directGrants.map((g) => (
+                        <li key={g.id} className="flex items-center justify-between rounded-md border border-border p-3">
+                          <Link href={`/users/${g.userId}`} className="font-medium hover:text-primary">
+                            {g.user.name}
+                          </Link>
+                          <span className="text-xs text-muted-foreground">
+                            {JSON.parse(g.permissions).join(", ")}
+                            {g.allowedTables && ` · tables: ${JSON.parse(g.allowedTables).join(", ")}`}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>

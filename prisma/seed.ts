@@ -8,87 +8,10 @@ if (!process.env.DATABASE_URL) {
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
-type ToolDef = { name: string; level: "READ" | "WRITE" | "DELETE" };
-
-const TOOL_CATALOG: Record<string, ToolDef[]> = {
-  jira: [
-    { name: "get_issue", level: "READ" },
-    { name: "search_issues", level: "READ" },
-    { name: "list_projects", level: "READ" },
-    { name: "list_users", level: "READ" },
-    { name: "get_user", level: "READ" },
-    { name: "list_boards", level: "READ" },
-    { name: "list_sprints", level: "READ" },
-    { name: "get_sprint", level: "READ" },
-    { name: "create_issue", level: "WRITE" },
-    { name: "update_issue", level: "WRITE" },
-    { name: "add_comment", level: "WRITE" },
-    { name: "transition_issue", level: "WRITE" },
-    { name: "assign_issue", level: "WRITE" },
-    { name: "create_sprint", level: "WRITE" },
-    { name: "delete_issue", level: "DELETE" },
-    { name: "delete_comment", level: "DELETE" },
-  ],
-  zoho: [
-    { name: "list_records", level: "READ" },
-    { name: "get_record", level: "READ" },
-    { name: "search_records", level: "READ" },
-    { name: "list_modules", level: "READ" },
-    { name: "list_fields", level: "READ" },
-    { name: "get_organization", level: "READ" },
-    { name: "create_record", level: "WRITE" },
-    { name: "update_record", level: "WRITE" },
-    { name: "upsert_record", level: "WRITE" },
-    { name: "convert_lead", level: "WRITE" },
-    { name: "delete_record", level: "DELETE" },
-  ],
-  hubspot: [
-    { name: "list_contacts", level: "READ" },
-    { name: "get_contact", level: "READ" },
-    { name: "list_deals", level: "READ" },
-    { name: "get_deal", level: "READ" },
-    { name: "list_companies", level: "READ" },
-    { name: "get_company", level: "READ" },
-    { name: "search_objects", level: "READ" },
-    { name: "list_owners", level: "READ" },
-    { name: "create_contact", level: "WRITE" },
-    { name: "update_contact", level: "WRITE" },
-    { name: "create_deal", level: "WRITE" },
-    { name: "update_deal", level: "WRITE" },
-    { name: "create_company", level: "WRITE" },
-    { name: "update_company", level: "WRITE" },
-    { name: "associate_objects", level: "WRITE" },
-    { name: "delete_contact", level: "DELETE" },
-    { name: "delete_deal", level: "DELETE" },
-    { name: "delete_company", level: "DELETE" },
-  ],
-  salesforce: [
-    { name: "list_objects", level: "READ" },
-    { name: "describe_object", level: "READ" },
-    { name: "query_records", level: "READ" },
-    { name: "get_record", level: "READ" },
-    { name: "run_soql", level: "READ" },
-    { name: "list_reports", level: "READ" },
-    { name: "create_record", level: "WRITE" },
-    { name: "update_record", level: "WRITE" },
-    { name: "upsert_record", level: "WRITE" },
-    { name: "run_apex", level: "WRITE" },
-    { name: "delete_record", level: "DELETE" },
-  ],
-  postgres: [
-    { name: "list_databases", level: "READ" },
-    { name: "list_tables", level: "READ" },
-    { name: "describe_table", level: "READ" },
-    { name: "read_table", level: "READ" },
-    { name: "query", level: "READ" },
-    { name: "list_schemas", level: "READ" },
-    { name: "insert_row", level: "WRITE" },
-    { name: "update_row", level: "WRITE" },
-    { name: "execute_ddl", level: "WRITE" },
-    { name: "delete_row", level: "DELETE" },
-    { name: "drop_table", level: "DELETE" },
-  ],
-};
+// Tool catalog is no longer seeded.
+// Tools are discovered live from upstream MCPs and persisted with heuristic
+// classification on first successful tools/list. Admins can override per-tool
+// levels via the Connection detail page.
 
 const DATA_SOURCES = [
   {
@@ -131,11 +54,13 @@ const DATA_SOURCES = [
 async function main() {
   console.log("Seeding database…");
 
+  await prisma.userDataSourceAccess.deleteMany();
   await prisma.workspaceUser.deleteMany();
   await prisma.workspaceDataSource.deleteMany();
   await prisma.workspace.deleteMany();
   await prisma.userMcpToken.deleteMany();
   await prisma.auditLog.deleteMany();
+  await prisma.adminEvent.deleteMany();
   await prisma.toolPermission.deleteMany();
   await prisma.dataSource.deleteMany();
   await prisma.user.deleteMany();
@@ -164,16 +89,8 @@ async function main() {
   console.log(`✓ Created users: admin, alice, bob, carol`);
 
   for (const ds of DATA_SOURCES) {
-    const created = await prisma.dataSource.create({ data: ds });
-    const tools = TOOL_CATALOG[ds.type] ?? [];
-    await prisma.toolPermission.createMany({
-      data: tools.map((t) => ({
-        dataSourceId: created.id,
-        toolName: t.name,
-        level: t.level,
-      })),
-    });
-    console.log(`✓ Created data source "${ds.name}" with ${tools.length} tool permissions`);
+    await prisma.dataSource.create({ data: ds });
+    console.log(`✓ Created data source "${ds.name}"`);
   }
 
   const hubspot = await prisma.dataSource.findUniqueOrThrow({ where: { slug: "hubspot" } });
