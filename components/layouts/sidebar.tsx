@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutGrid,
+  LayoutDashboard,
   Plug,
   ShieldCheck,
   FileText,
@@ -22,13 +22,13 @@ import {
 type NavItem = {
   href: string;
   label: string;
-  icon: typeof LayoutGrid;
+  icon: typeof LayoutDashboard;
   exact?: boolean;
   children?: NavItem[];
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Getting Started", icon: LayoutGrid, exact: true },
+  { href: "/", label: "Work", icon: LayoutDashboard, exact: true },
   {
     href: "/connections",
     label: "Connections",
