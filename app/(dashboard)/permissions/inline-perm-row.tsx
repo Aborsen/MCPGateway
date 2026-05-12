@@ -1,0 +1,156 @@
+"use client";
+
+import { useState } from "react";
+import { Check, FolderTree, Sparkles, MoreHorizontal, Trash2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { LEVELS, type GrantCell, type PermissionLevel } from "./permissions-types";
+
+// Reusable row showing a single (user × connection) grant with R/W/D toggle pills.
+// Used in both By User and By Connection right-pane lists.
+export function InlinePermRow({
+  label,
+  sublabel,
+  cell,
+  onSave,
+  onRevokeDirect,
+  emphasis,
+}: {
+  label: string;
+  sublabel?: string;
+  cell: GrantCell | undefined;
+  onSave: (next: PermissionLevel[]) => void | Promise<void>;
+  onRevokeDirect?: () => void | Promise<void>;
+  emphasis?: boolean;
+}) {
+  const directSource = cell?.sources.find((s) => s.kind === "direct");
+  const workspaceSources = cell?.sources.filter((s) => s.kind === "workspace") ?? [];
+  const [busy, setBusy] = useState(false);
+  const effective = new Set<PermissionLevel>(cell?.permissions ?? []);
+  const directPerms = new Set<PermissionLevel>(directSource?.permissions ?? []);
+
+  async function toggleDirect(p: PermissionLevel) {
+    const next = new Set(directPerms);
+    if (next.has(p)) next.delete(p);
+    else next.add(p);
+    setBusy(true);
+    try {
+      await onSave(Array.from(next));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between gap-3 border-b border-border px-3 py-2.5 last:border-b-0",
+        emphasis && "bg-primary/5",
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <span className="truncate">{label}</span>
+          {directSource && (
+            <span
+              className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary/20 text-primary"
+              title="Has a direct grant"
+            >
+              <Sparkles className="h-2.5 w-2.5" />
+            </span>
+          )}
+        </div>
+        {sublabel && <div className="text-xs text-muted-foreground">{sublabel}</div>}
+        {workspaceSources.length > 0 && (
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            {workspaceSources.map((s) => (
+              <span
+                key={s.kind === "workspace" ? s.workspaceId : "direct"}
+                className="inline-flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground"
+              >
+                <FolderTree className="h-2.5 w-2.5" />
+                {s.kind === "workspace" ? s.workspaceName : "direct"}
+                <span className="text-muted-foreground">·</span>
+                <span className="uppercase">{s.permissions.join(",") || "—"}</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        {LEVELS.map((p) => {
+          const isEffective = effective.has(p);
+          const isDirect = directPerms.has(p);
+          return (
+            <button
+              key={p}
+              onClick={() => toggleDirect(p)}
+              disabled={busy}
+              title={
+                isDirect
+                  ? `Direct grant: ${p}`
+                  : isEffective
+                    ? `Via workspace: ${p} (click to add direct grant)`
+                    : `Click to grant ${p}`
+              }
+              className={cn(
+                "inline-flex h-7 w-9 items-center justify-center rounded-md border text-[11px] uppercase transition-colors",
+                isDirect && "border-primary bg-primary text-primary-foreground",
+                !isDirect && isEffective && "border-success/60 bg-success/15 text-success",
+                !isDirect && !isEffective && "border-border text-muted-foreground hover:bg-muted",
+                busy && "opacity-60",
+              )}
+            >
+              {isEffective ? <Check className="h-3 w-3" /> : null}
+              {p[0]}
+            </button>
+          );
+        })}
+        {directSource && onRevokeDirect && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted">
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onSelect={() => onRevokeDirect()}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Revoke direct grant
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function GrantBadges({ cell }: { cell: GrantCell | undefined }) {
+  if (!cell || cell.permissions.length === 0) {
+    return <span className="text-xs text-muted-foreground">No access</span>;
+  }
+  return (
+    <div className="flex items-center gap-1">
+      {LEVELS.map((p) => (
+        <Badge
+          key={p}
+          variant={cell.permissions.includes(p) ? "success" : "outline"}
+          className={cn("uppercase", !cell.permissions.includes(p) && "opacity-30")}
+        >
+          {cell.permissions.includes(p) ? <Check className="h-3 w-3" /> : null}
+          {p[0]}
+        </Badge>
+      ))}
+    </div>
+  );
+}

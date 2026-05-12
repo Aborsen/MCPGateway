@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import type { GrantCell, GrantSource, PermissionLevel } from "./permissions-matrix";
+import type { GrantCell, GrantSource, PermissionLevel } from "./permissions-types";
 
 const LEVELS: PermissionLevel[] = ["read", "write", "delete"];
 

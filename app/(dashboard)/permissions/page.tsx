@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/layouts/page-header";
-import { PermissionsMatrix } from "./permissions-matrix";
+import { PermissionsView } from "./permissions-view";
 
 export const dynamic = "force-dynamic";
 
@@ -8,9 +8,9 @@ export default function PermissionsPage() {
     <>
       <PageHeader
         title="Permissions"
-        description="Effective access per user × connection. Click any cell to view sources and edit the direct grant."
+        description="Manage who can access which connection. Workspace assignments and direct grants are combined."
       />
-      <PermissionsMatrix />
+      <PermissionsView />
     </>
   );
 }
