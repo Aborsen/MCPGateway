@@ -31,6 +31,7 @@ export type Connection = {
   description: string | null;
   toolCount: number;
   workspaceCount: number;
+  directGrantCount: number;
   createdAt: string;
 };
 

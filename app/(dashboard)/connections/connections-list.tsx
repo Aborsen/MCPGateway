@@ -84,7 +84,9 @@ export function ConnectionsList({ initial }: { initial: Connection[] }) {
       }
       if (typeFilter !== "all" && c.type !== typeFilter) return false;
       if (usageFilter === "used" && c.workspaceCount === 0) return false;
-      if (usageFilter === "unused" && c.workspaceCount > 0) return false;
+      if (usageFilter === "direct" && c.directGrantCount === 0) return false;
+      if (usageFilter === "unused" && (c.workspaceCount > 0 || c.directGrantCount > 0))
+        return false;
       return true;
     });
     if (!sortKey) return rows;
@@ -182,6 +184,7 @@ export function ConnectionsList({ initial }: { initial: Connection[] }) {
               <SelectContent>
                 <SelectItem value="all">Any usage</SelectItem>
                 <SelectItem value="used">In a workspace</SelectItem>
+                <SelectItem value="direct">Direct grants</SelectItem>
                 <SelectItem value="unused">Not used</SelectItem>
               </SelectContent>
             </Select>

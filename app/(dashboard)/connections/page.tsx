@@ -7,7 +7,13 @@ export default async function ConnectionsPage() {
   const connections = await prisma.dataSource.findMany({
     orderBy: { createdAt: "asc" },
     include: {
-      _count: { select: { toolPermissions: true, workspaceDataSources: true } },
+      _count: {
+        select: {
+          toolPermissions: true,
+          workspaceDataSources: true,
+          directGrants: true,
+        },
+      },
     },
   });
 
@@ -22,6 +28,7 @@ export default async function ConnectionsPage() {
         description: c.description,
         toolCount: c._count.toolPermissions,
         workspaceCount: c._count.workspaceDataSources,
+        directGrantCount: c._count.directGrants,
         createdAt: c.createdAt.toISOString(),
       }))}
     />
