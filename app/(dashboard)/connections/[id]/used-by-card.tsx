@@ -142,13 +142,14 @@ export function UsedByCard({
                     {wsFiltered.map((w) => (
                       <li
                         key={w.id}
-                        className="flex items-center justify-between rounded-md border border-border p-3"
+                        className="flex min-h-[64px] items-center justify-between rounded-md border border-border p-3"
                       >
                         <Link
                           href={`/workspaces/${w.workspaceId}`}
-                          className="truncate font-medium hover:text-primary"
+                          className="min-w-0 flex-1 truncate hover:text-primary"
                         >
-                          {w.workspaceName}
+                          <div className="font-medium">{w.workspaceName}</div>
+                          <div className="text-xs text-muted-foreground">Workspace</div>
                         </Link>
                         <Badge variant="outline" className="ml-2 shrink-0 text-xs">
                           {w.allowedTablesLabel}
@@ -167,7 +168,7 @@ export function UsedByCard({
                     {dgFiltered.map((g) => (
                       <li
                         key={g.id}
-                        className="flex items-center justify-between gap-2 rounded-md border border-border p-3"
+                        className="flex min-h-[64px] items-center justify-between gap-2 rounded-md border border-border p-3"
                       >
                         <Link
                           href={`/users/${g.userId}`}

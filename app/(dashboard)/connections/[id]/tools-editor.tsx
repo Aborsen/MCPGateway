@@ -69,8 +69,8 @@ export function ToolsEditor({ dataSourceId }: { dataSourceId: string }) {
   }
 
   // Fixed total height — keeps the card the same size whether Loading,
-  // Empty, 1 tool, or 50 tools. Inner table scrolls when overflow happens.
-  const SHELL_HEIGHT = "h-[420px]";
+  // Empty, 1 tool, or 50 tools. Sized to show ~4 rows; overflow scrolls.
+  const SHELL_HEIGHT = "h-[320px]";
 
   if (!data) {
     return (
@@ -121,8 +121,10 @@ export function ToolsEditor({ dataSourceId }: { dataSourceId: string }) {
                 </tr>
               ) : (
                 data.tools.map((t) => (
-                  <tr key={t.name} className="border-b border-border">
-                    <td className="px-3 py-2">
+                  // Borders applied to TDs (not TR) for reliable rendering
+                  // across browsers when border-collapse is in play.
+                  <tr key={t.name}>
+                    <td className="border-b border-border px-3 py-2">
                       <div className="flex items-center gap-2">
                         <code className="font-mono text-xs">{t.name}</code>
                         {!t.isLive && (
@@ -137,7 +139,7 @@ export function ToolsEditor({ dataSourceId }: { dataSourceId: string }) {
                         </div>
                       )}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="border-b border-border px-3 py-2">
                       <Select
                         value={t.level.toUpperCase()}
                         onValueChange={(v) => changeLevel(t.name, v)}
@@ -153,7 +155,7 @@ export function ToolsEditor({ dataSourceId }: { dataSourceId: string }) {
                         </SelectContent>
                       </Select>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="border-b border-border px-3 py-2">
                       {t.classifiedBy === "admin" ? (
                         <Badge variant="default" className="text-[10px]">
                           Override
