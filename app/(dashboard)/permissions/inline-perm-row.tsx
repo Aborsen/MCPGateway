@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LEVELS, type GrantCell, type PermissionLevel } from "./permissions-types";
+import { LEVELS, LEVEL_LABEL, type GrantCell, type PermissionLevel } from "./permissions-types";
 
 // Reusable row showing a single (user × connection) grant with R/W/D toggle pills.
 // Used in both By User and By Connection right-pane lists.
@@ -94,13 +94,13 @@ export function InlinePermRow({
               disabled={busy}
               title={
                 isDirect
-                  ? `Direct grant: ${p}`
+                  ? `Direct grant: ${LEVEL_LABEL[p]}`
                   : isEffective
-                    ? `Via workspace: ${p} (click to add direct grant)`
-                    : `Click to grant ${p}`
+                    ? `Via workspace: ${LEVEL_LABEL[p]} (click to add direct grant)`
+                    : `Click to grant ${LEVEL_LABEL[p]}`
               }
               className={cn(
-                "inline-flex h-7 w-9 items-center justify-center rounded-md border text-[11px] uppercase transition-colors",
+                "inline-flex h-7 min-w-[68px] items-center justify-center gap-1 rounded-md border px-2 text-[11px] font-medium uppercase tracking-wide transition-colors",
                 isDirect && "border-primary bg-primary text-primary-foreground",
                 !isDirect && isEffective && "border-success/60 bg-success/15 text-success",
                 !isDirect && !isEffective && "border-border text-muted-foreground hover:bg-muted",
@@ -108,28 +108,31 @@ export function InlinePermRow({
               )}
             >
               {isEffective ? <Check className="h-3 w-3" /> : null}
-              {p[0]}
+              {LEVEL_LABEL[p]}
             </button>
           );
         })}
-        {directSource && onRevokeDirect && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted">
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onSelect={() => onRevokeDirect()}
-                className="text-destructive focus:text-destructive"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Revoke direct grant
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        {/* Always reserve space for the menu so columns stay aligned across rows */}
+        <div className="ml-1 w-7">
+          {directSource && onRevokeDirect && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted">
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onSelect={() => onRevokeDirect()}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Revoke direct grant
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </div>
     </div>
   );
