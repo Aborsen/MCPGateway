@@ -100,14 +100,18 @@ export function InlinePermRow({
                     : `Click to grant ${LEVEL_LABEL[p]}`
               }
               className={cn(
-                "inline-flex h-7 min-w-[68px] items-center justify-center gap-1 rounded-md border px-2 text-[11px] font-medium uppercase tracking-wide transition-colors",
+                "inline-flex h-7 w-[88px] items-center justify-center gap-1 rounded-md border px-2 text-[11px] font-medium uppercase tracking-wide transition-colors",
                 isDirect && "border-primary bg-primary text-primary-foreground",
                 !isDirect && isEffective && "border-success/60 bg-success/15 text-success",
                 !isDirect && !isEffective && "border-border text-muted-foreground hover:bg-muted",
                 busy && "opacity-60",
               )}
             >
-              {isEffective ? <Check className="h-3 w-3" /> : null}
+              {/* Always reserve a 12px slot for the check so pill width
+                  stays constant whether the permission is active or not. */}
+              <span className="inline-flex w-3 shrink-0 items-center justify-center">
+                {isEffective ? <Check className="h-3 w-3" /> : null}
+              </span>
               {LEVEL_LABEL[p]}
             </button>
           );
