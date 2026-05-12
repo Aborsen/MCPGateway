@@ -48,3 +48,5 @@ next-env.d.ts
 .dev.log
 *.db
 *.db-journal
+
+.vercel

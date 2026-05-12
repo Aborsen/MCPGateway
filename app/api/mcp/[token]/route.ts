@@ -250,7 +250,17 @@ async function aggregateTools(access: UserAccess[]) {
         type: a.dataSourceType,
         upstreamUrl: a.upstreamUrl,
         configEncrypted: a.configEncrypted,
-      }).catch(() => []);
+      }).catch((err) => {
+        console.error(
+          `[mcp/tools/list] upstream "${a.dataSourceName}" (${a.upstreamUrl}) failed:`,
+          err instanceof Error ? err.message : err,
+          err instanceof Error ? err.stack : "",
+        );
+        return [];
+      });
+      console.log(
+        `[mcp/tools/list] connector "${a.dataSourceName}" returned ${upstreamTools.length} tools`,
+      );
 
       const levelMap = await prisma.toolPermission.findMany({
         where: { dataSourceId: a.dataSourceId },
