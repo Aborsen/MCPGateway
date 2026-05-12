@@ -66,8 +66,7 @@ export function ConnectionFormDialog({
   onSaved: () => void;
 }) {
   const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [type, setType] = useState("jira");
+  const [type, setType] = useState("operations");
   const [upstreamUrl, setUpstreamUrl] = useState("");
   const [description, setDescription] = useState("");
   const [authScheme, setAuthScheme] = useState<AuthScheme>("bearer");
@@ -79,14 +78,12 @@ export function ConnectionFormDialog({
   useEffect(() => {
     if (connection) {
       setName(connection.name);
-      setSlug(connection.slug);
       setType(connection.type);
       setUpstreamUrl(connection.upstreamUrl);
       setDescription(connection.description ?? "");
     } else {
       setName("");
-      setSlug("");
-      setType("jira");
+      setType("operations");
       setUpstreamUrl("");
       setDescription("");
     }
@@ -133,7 +130,6 @@ export function ConnectionFormDialog({
         ? { name, type, upstreamUrl, description: description || null, ...authPayload }
         : {
             name,
-            slug,
             type,
             upstreamUrl,
             description: description || null,
@@ -167,29 +163,15 @@ export function ConnectionFormDialog({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                placeholder="My Jira Cloud"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="slug">Slug</Label>
-              <Input
-                id="slug"
-                value={slug}
-                onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
-                required={!connection}
-                disabled={!!connection}
-                placeholder="my-jira"
-                pattern="^[a-z0-9-]+$"
-              />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="name">Name</Label>
+            <Input
+              id="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              placeholder="HubSpot Production"
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="type">Type</Label>

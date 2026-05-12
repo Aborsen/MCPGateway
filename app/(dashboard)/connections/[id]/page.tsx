@@ -68,7 +68,6 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
             <CardTitle>Details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <DetailRow label="Slug" value={ds.slug} mono />
             <DetailRow label="Type" value={ds.type} />
             <DetailRow
               label="Upstream"
@@ -85,6 +84,17 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
               }
             />
             <DetailRow label="Encrypted creds" value={ds.configEncrypted ? "Set" : "None"} />
+            <div className="border-t border-border pt-3">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                Tool prefix
+              </div>
+              <code className="mt-1 block break-all font-mono text-xs">
+                {ds.slug}__<span className="text-muted-foreground">tool_name</span>
+              </code>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                Tools appear in Claude with this prefix so calls route back to this connection.
+              </p>
+            </div>
           </CardContent>
         </Card>
 

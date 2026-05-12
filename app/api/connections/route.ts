@@ -16,7 +16,13 @@ const CustomHeadersSchema = z
 
 const CreateSchema = z.object({
   name: z.string().min(1).max(100),
-  slug: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/, "lowercase letters, digits, hyphens"),
+  slug: z
+    .string()
+    .min(1)
+    .max(50)
+    .regex(/^[a-z0-9-]+$/, "lowercase letters, digits, hyphens")
+    .optional()
+    .nullable(),
   type: z.string().min(1).max(40),
   upstreamUrl: z.string().url(),
   description: z.string().max(500).optional().nullable(),
@@ -24,6 +30,28 @@ const CreateSchema = z.object({
   apiKey: z.string().optional().nullable(),
   customHeaders: CustomHeadersSchema.optional().nullable(),
 });
+
+function slugifyName(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40) || "connection"
+  );
+}
+
+async function uniqueSlug(base: string): Promise<string> {
+  if (!(await prisma.dataSource.findUnique({ where: { slug: base } }))) return base;
+  let n = 2;
+  while (true) {
+    const candidate = `${base}-${n}`;
+    if (!(await prisma.dataSource.findUnique({ where: { slug: candidate } }))) return candidate;
+    n++;
+    if (n > 999) throw new Error("Couldn't find a free slug after 999 attempts");
+  }
+}
 
 export async function GET() {
   await requireAdmin();
@@ -61,10 +89,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 });
   }
   const data = parsed.data;
-  const existing = await prisma.dataSource.findUnique({ where: { slug: data.slug } });
-  if (existing) {
-    return NextResponse.json({ error: "Slug already exists" }, { status: 409 });
-  }
+  // Slug is derived from name unless the caller passed an explicit one.
+  // Collisions get a numeric suffix (-2, -3, …) so admin never has to think about it.
+  const slug = await uniqueSlug(data.slug?.trim() || slugifyName(data.name));
   const cfg = buildEncryptedConfig({
     authScheme: data.authScheme,
     apiKey: data.apiKey ?? null,
@@ -74,7 +101,7 @@ export async function POST(request: Request) {
   const created = await prisma.dataSource.create({
     data: {
       name: data.name,
-      slug: data.slug,
+      slug,
       type: data.type,
       upstreamUrl: data.upstreamUrl,
       description: data.description ?? null,
