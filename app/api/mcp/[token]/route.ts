@@ -6,6 +6,7 @@ import { writeAudit } from "@/lib/mcp/audit";
 import {
   getUserAccess,
   getToolLevel,
+  classifyToolByName,
   extractTableFromArgs,
   isRawQueryTool,
   filterListedTablesPayload,
@@ -269,7 +270,8 @@ async function aggregateTools(access: UserAccess[]) {
 
       return upstreamTools
         .filter((t) => {
-          const required = (levels.get(t.name) ?? "write") as "read" | "write" | "delete";
+          const seeded = levels.get(t.name) as "read" | "write" | "delete" | undefined;
+          const required = seeded ?? classifyToolByName(t.name);
           if (!a.permissions.has(required)) return false;
           if (a.allowedTables && isRawQueryTool(t.name)) return false;
           return true;

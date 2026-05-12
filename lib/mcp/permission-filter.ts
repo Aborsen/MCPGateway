@@ -64,8 +64,23 @@ export async function getToolLevel(
   const tp = await prisma.toolPermission.findUnique({
     where: { dataSourceId_toolName: { dataSourceId, toolName } },
   });
-  if (!tp) return "write";
-  return tp.level.toLowerCase() as PermissionLevel;
+  if (tp) return tp.level.toLowerCase() as PermissionLevel;
+  return classifyToolByName(toolName);
+}
+
+// Heuristic classifier for tools not explicitly seeded in ToolPermission.
+// Matches both snake_case (create_record) and PascalCase (CreateRecord, Objects).
+export function classifyToolByName(name: string): PermissionLevel {
+  const n = name.toLowerCase().replace(/[^a-z]/g, "_");
+  if (/(^|_)(delete|drop|remove|destroy|purge|truncate)(_|$)/.test(n)) return "delete";
+  if (
+    /(^|_)(create|update|upsert|insert|set|add|write|modify|transition|assign|convert|merge|patch|edit|put|post|run|execute|send|cancel|approve|reject|publish|unpublish|archive|restore|enable|disable|start|stop|trigger)(_|$)/.test(
+      n,
+    )
+  ) {
+    return "write";
+  }
+  return "read";
 }
 
 const TABLE_ARG_KEYS = ["table_name", "table", "module", "object_name", "resource"];
