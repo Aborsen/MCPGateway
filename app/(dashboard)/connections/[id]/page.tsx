@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { parseAllowedTables, parsePermissions } from "@/lib/json";
 import { ToolsEditor } from "./tools-editor";
 import { UsedByCard } from "./used-by-card";
+import { TablesViewer } from "@/components/tables-viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -100,10 +101,15 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
 
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Tools</CardTitle>
-            <CardDescription>
-              Discovered live from the upstream. Levels are auto-classified; click a dropdown to override.
-            </CardDescription>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle>Tools</CardTitle>
+                <CardDescription>
+                  Discovered live from the upstream. Levels are auto-classified; click a dropdown to override.
+                </CardDescription>
+              </div>
+              <TablesViewer dataSourceId={ds.id} dataSourceName={ds.name} />
+            </div>
           </CardHeader>
           <CardContent>
             <ToolsEditor dataSourceId={ds.id} />

@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { TablesViewer } from "@/components/tables-viewer";
 
 type DataSourceOption = { id: string; name: string; type: string };
 type UserOption = { id: string; name: string; email: string };
@@ -176,6 +177,7 @@ export function WorkspaceEditor({
                         placeholder="contacts, deals"
                         className="h-8 max-w-sm flex-1 font-mono text-xs"
                       />
+                      <TablesViewer dataSourceId={ds.id} dataSourceName={ds.name} />
                     </div>
                   )}
                 </div>
