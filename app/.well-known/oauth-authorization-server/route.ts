@@ -16,6 +16,10 @@ export async function GET(): Promise<Response> {
   }
   return NextResponse.json({
     issuer,
+    // OIDC RP-Initiated Logout / Dynamic Client Registration use logo_uri for
+    // server branding. Some MCP clients also read this when picking an icon
+    // for the server in their connector list.
+    logo_uri: `${issuer}/logo.png`,
     authorization_endpoint: `${issuer}/oauth/authorize`,
     token_endpoint: `${issuer}/oauth/token`,
     userinfo_endpoint: `${issuer}/oauth/userinfo`,

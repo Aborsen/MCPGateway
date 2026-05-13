@@ -14,6 +14,7 @@ import {
   type UserAccess,
 } from "@/lib/mcp/permission-filter";
 import { listToolsFromUpstream, callToolOnUpstream } from "@/lib/mcp/upstream-client";
+import { buildServerInfo } from "@/lib/mcp/server-info";
 import {
   ERROR_CODES,
   MCP_PROTOCOL_VERSION,
@@ -419,22 +420,3 @@ function filterListResult(result: McpToolResult, allowed: string[]): McpToolResu
   };
 }
 
-// Mirrors the helper in /api/mcp/u/[uid]/route.ts. SEP-973 / MCP 2025-11-25
-// added `icons` to Implementation; clients on older spec ignore the field.
-function buildServerInfo(title: string) {
-  const issuer = process.env.OIDC_ISSUER ?? "";
-  return {
-    name: "mcp-gateway",
-    title,
-    version: "0.1.0",
-    icons: issuer
-      ? [
-          {
-            src: `${issuer}/logo.png`,
-            mimeType: "image/png",
-            sizes: ["256x256"],
-          },
-        ]
-      : undefined,
-  };
-}

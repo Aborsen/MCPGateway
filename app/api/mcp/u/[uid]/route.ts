@@ -14,6 +14,7 @@ import {
   type UserAccess,
 } from "@/lib/mcp/permission-filter";
 import { listToolsFromUpstream, callToolOnUpstream } from "@/lib/mcp/upstream-client";
+import { buildServerInfo } from "@/lib/mcp/server-info";
 import {
   ERROR_CODES,
   MCP_PROTOCOL_VERSION,
@@ -418,24 +419,3 @@ function filterListResult(result: McpToolResult, allowed: string[]): McpToolResu
   };
 }
 
-// MCP serverInfo with title + icons (SEP-973 / 2025-11-25). Clients that
-// don't yet read these fields just ignore them, so adding them costs nothing
-// and gives us automatic branding the moment Claude (and others) ship icon
-// support. Same-origin icon URL per the security note in the spec.
-function buildServerInfo(title: string) {
-  const issuer = process.env.OIDC_ISSUER ?? "";
-  return {
-    name: "mcp-gateway",
-    title,
-    version: "0.1.0",
-    icons: issuer
-      ? [
-          {
-            src: `${issuer}/logo.png`,
-            mimeType: "image/png",
-            sizes: ["256x256"],
-          },
-        ]
-      : undefined,
-  };
-}
