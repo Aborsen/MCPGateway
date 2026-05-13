@@ -3,8 +3,10 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/layouts/page-header";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { parsePermissions, parseAllowedTables } from "@/lib/json";
 import { WorkspaceEditor } from "./workspace-editor";
+import { WorkspaceMcpUrl } from "./workspace-mcp-url";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +43,20 @@ export default async function WorkspaceDetailPage({ params }: PageProps) {
         }
       />
 
-      <div className="p-6">
+      <div className="space-y-6 p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Workspace MCP URL</CardTitle>
+            <CardDescription>
+              One URL for every member of this workspace. Each member signs in with their own
+              credentials via OAuth; permissions are this workspace&apos;s grants only.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <WorkspaceMcpUrl workspaceId={workspace.id} initialMcpUid={workspace.mcpUid} />
+          </CardContent>
+        </Card>
+
         <WorkspaceEditor
           workspace={{
             id: workspace.id,

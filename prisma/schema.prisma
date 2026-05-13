@@ -91,6 +91,7 @@ model Workspace {
   id          String    @id @default(cuid())
   name        String
   description String?
+  mcpUid      String?   @unique
   createdAt   DateTime  @default(now())
   deletedAt   DateTime?
 

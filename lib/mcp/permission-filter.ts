@@ -77,6 +77,53 @@ function mergeTables(row: MutableAccess, incoming: string[] | null) {
   row.allowedTables = Array.from(set);
 }
 
+// Workspace-scoped access: only the grants that come from this one workspace.
+// Used when a user connects via a workspace MCP URL — direct grants and other
+// workspaces are NOT merged in, because the URL represents the workspace, not
+// the user's full grant set.
+export async function getWorkspaceMemberAccess(
+  userId: string,
+  workspaceId: string,
+): Promise<UserAccess[]> {
+  const wu = await prisma.workspaceUser.findUnique({
+    where: { workspaceId_userId: { workspaceId, userId } },
+    include: {
+      workspace: {
+        include: { dataSources: { include: { dataSource: true } } },
+      },
+    },
+  });
+  if (!wu || wu.workspace.deletedAt) return [];
+
+  const perms = parsePermissions(wu.permissions);
+  const merged = new Map<string, MutableAccess>();
+  for (const wds of wu.workspace.dataSources) {
+    const allowed = parseAllowedTables(wds.allowedTables);
+    const row = ensureRow(merged, wds.dataSource);
+    for (const p of perms) row.permissions.add(p);
+    mergeTables(row, allowed);
+    row.sources.push({
+      kind: "workspace",
+      workspaceId: wu.workspace.id,
+      workspaceName: wu.workspace.name,
+      permissions: perms,
+      allowedTables: allowed,
+    });
+  }
+
+  return Array.from(merged.values()).map((r) => ({
+    dataSourceId: r.dataSourceId,
+    dataSourceSlug: r.dataSourceSlug,
+    dataSourceName: r.dataSourceName,
+    dataSourceType: r.dataSourceType,
+    upstreamUrl: r.upstreamUrl,
+    configEncrypted: r.configEncrypted,
+    permissions: r.permissions,
+    allowedTables: r.allowedTables,
+    sources: r.sources,
+  }));
+}
+
 export async function getUserAccess(userId: string): Promise<UserAccess[]> {
   const [workspaceUsers, directGrants] = await Promise.all([
     prisma.workspaceUser.findMany({
