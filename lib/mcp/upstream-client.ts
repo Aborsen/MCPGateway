@@ -106,7 +106,7 @@ async function fetchRealUpstreamList(connector: Connector): Promise<McpTool[]> {
       params: {
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: {},
-        clientInfo: { name: "ai-connectivity-proxy", version: "0.1" },
+        clientInfo: { name: "mcp-gateway-proxy", version: "0.1" },
       },
     }),
   });

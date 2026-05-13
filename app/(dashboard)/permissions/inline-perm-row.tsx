@@ -96,11 +96,11 @@ export function InlinePermRow({
               disabled={busy || workspaceOnly}
               title={
                 workspaceOnly
-                  ? `Managed by Team — edit on the team page`
+                  ? `Managed by Workspace — edit on the workspace page`
                   : isDirect
                     ? `Direct grant: ${LEVEL_LABEL[p]}`
                     : isEffective
-                      ? `Via team: ${LEVEL_LABEL[p]} (click to add direct grant)`
+                      ? `Via workspace: ${LEVEL_LABEL[p]} (click to add direct grant)`
                       : `Click to grant ${LEVEL_LABEL[p]}`
               }
               className={cn(

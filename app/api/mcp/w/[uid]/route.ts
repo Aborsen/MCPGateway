@@ -187,7 +187,7 @@ export async function POST(request: Request, { params }: RouteCtx) {
         response = jsonRpcSuccess(body.id ?? null, {
           protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: `ai-connectivity (workspace: ${workspace.name})`, version: "0.1.0" },
+          serverInfo: { name: `mcp-gateway (workspace: ${workspace.name})`, version: "0.1.0" },
         });
         const res = NextResponse.json(response, { headers: { "Mcp-Session-Id": sessionId } });
         after(() =>
@@ -339,7 +339,7 @@ export async function POST(request: Request, { params }: RouteCtx) {
 export async function GET() {
   return NextResponse.json(
     {
-      info: "AI Connectivity MCP endpoint (workspace-scoped)",
+      info: "MCP Gateway endpoint (workspace-scoped)",
       protocol: "MCP / JSON-RPC 2.0 over HTTP POST",
       auth: "OAuth 2.1 Bearer (see /.well-known/oauth-protected-resource)",
     },

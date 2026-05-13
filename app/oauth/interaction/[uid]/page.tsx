@@ -68,7 +68,7 @@ export default async function InteractionPage({ params }: Props) {
           <CardHeader>
             <CardTitle>Sign in to continue</CardTitle>
             <CardDescription>
-              You&apos;re signed out of AI Connectivity. Sign in to authorize Claude.
+              You&apos;re signed out of MCP Gateway. Sign in to authorize Claude.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -94,7 +94,7 @@ export default async function InteractionPage({ params }: Props) {
           <CardHeader>
             <CardTitle>Sign in to connect Claude</CardTitle>
             <CardDescription>
-              Claude is requesting access to your AI Connectivity workspace. Sign in to continue.
+              Claude is requesting access to your MCP Gateway workspace. Sign in to continue.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -134,7 +134,7 @@ export default async function InteractionPage({ params }: Props) {
             <CardTitle>Allow access?</CardTitle>
             <CardDescription>
               <span className="font-medium text-foreground">{clientName}</span> wants to connect to
-              your AI Connectivity account
+              your MCP Gateway account
               {user ? ` (${user.email})` : ""}.
             </CardDescription>
           </CardHeader>

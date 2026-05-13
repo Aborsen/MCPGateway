@@ -57,7 +57,7 @@ export function WorkspacesList({ initial }: { initial: Workspace[] }) {
       setOpen(false);
       setName("");
       setDescription("");
-      router.push(`/teams/${data.id}`);
+      router.push(`/workspaces/${data.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed");
     } finally {
@@ -66,7 +66,7 @@ export function WorkspacesList({ initial }: { initial: Workspace[] }) {
   }
 
   async function onDelete(w: Workspace) {
-    if (!confirm(`Delete team "${w.name}"? Users assigned to this team lose access.`)) return;
+    if (!confirm(`Delete workspace "${w.name}"? Users assigned to this workspace lose access.`)) return;
     await fetch(`/api/workspaces/${w.id}`, { method: "DELETE" });
     startTransition(() => router.refresh());
   }
@@ -74,12 +74,12 @@ export function WorkspacesList({ initial }: { initial: Workspace[] }) {
   return (
     <>
       <PageHeader
-        title="Teams"
+        title="Workspaces"
         description="Group data sources, restrict tables, and assign users with read/write/delete permissions."
         actions={
           <Button onClick={() => setOpen(true)}>
             <Plus className="h-4 w-4" />
-            Create Team
+            Create Workspace
           </Button>
         }
       />
@@ -88,9 +88,9 @@ export function WorkspacesList({ initial }: { initial: Workspace[] }) {
         {initial.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-12 text-center">
             <FolderTree className="mx-auto h-8 w-8 text-muted-foreground" />
-            <h3 className="mt-3 text-sm font-medium">No teams yet</h3>
+            <h3 className="mt-3 text-sm font-medium">No workspaces yet</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Create a team to bundle data sources together and grant access to specific users.
+              Create a workspace to bundle data sources together and grant access to specific users.
             </p>
           </div>
         ) : (
@@ -115,7 +115,7 @@ export function WorkspacesList({ initial }: { initial: Workspace[] }) {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                <Link href={`/teams/${w.id}`} className="block">
+                <Link href={`/workspaces/${w.id}`} className="block">
                   <div className="flex items-center gap-2">
                     <FolderTree className="h-4 w-4 text-primary" />
                     <h3 className="font-semibold">{w.name}</h3>
@@ -137,9 +137,9 @@ export function WorkspacesList({ initial }: { initial: Workspace[] }) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create team</DialogTitle>
+            <DialogTitle>Create workspace</DialogTitle>
             <DialogDescription>
-              Configure data source restrictions and user assignments on the team page after creation.
+              Configure data source restrictions and user assignments on the workspace page after creation.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={onCreate} className="space-y-4">

@@ -82,8 +82,8 @@ export function UsedByCard({
         {isEmpty ? (
           <p className="text-sm text-muted-foreground">
             Not used yet. Assign it via{" "}
-            <Link href="/teams" className="text-primary hover:underline">
-              Teams
+            <Link href="/workspaces" className="text-primary hover:underline">
+              Workspaces
             </Link>{" "}
             or grant a user direct access via{" "}
             <Link href="/permissions" className="text-primary hover:underline">
@@ -99,7 +99,7 @@ export function UsedByCard({
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search teams & users…"
+                  placeholder="Search workspaces & users…"
                   className="h-9 pl-8"
                 />
               </div>
@@ -109,7 +109,7 @@ export function UsedByCard({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Show both</SelectItem>
-                  <SelectItem value="workspaces">Teams only</SelectItem>
+                  <SelectItem value="workspaces">Workspaces only</SelectItem>
                   <SelectItem value="direct">Direct grants only</SelectItem>
                 </SelectContent>
               </Select>
@@ -134,7 +134,7 @@ export function UsedByCard({
               <div className="grid gap-4 md:grid-cols-2">
                 {showWs && (
                   <Section
-                    title="Teams"
+                    title="Workspaces"
                     icon={<FolderTree className="h-3.5 w-3.5" />}
                     count={wsFiltered.length}
                     totalCount={workspaces.length}
@@ -145,11 +145,11 @@ export function UsedByCard({
                         className="flex min-h-[64px] items-center justify-between rounded-md border border-border p-3"
                       >
                         <Link
-                          href={`/teams/${w.workspaceId}`}
+                          href={`/workspaces/${w.workspaceId}`}
                           className="min-w-0 flex-1 truncate hover:text-primary"
                         >
                           <div className="font-medium">{w.workspaceName}</div>
-                          <div className="text-xs text-muted-foreground">Team</div>
+                          <div className="text-xs text-muted-foreground">Workspace</div>
                         </Link>
                         <Badge variant="outline" className="ml-2 shrink-0 text-xs">
                           {w.allowedTablesLabel}

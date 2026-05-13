@@ -40,7 +40,7 @@ export function UsersList({ initial }: { initial: User[] }) {
     <>
       <PageHeader
         title="Users"
-        description="People who can access this AI Connectivity instance and consume MCP servers."
+        description="People who can access this MCP Gateway instance and consume MCP servers."
         actions={
           <Button onClick={onInvite}>
             <Plus className="h-4 w-4" />
@@ -57,7 +57,7 @@ export function UsersList({ initial }: { initial: User[] }) {
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Email</th>
                 <th className="px-4 py-3 font-medium">Role</th>
-                <th className="px-4 py-3 font-medium">Teams</th>
+                <th className="px-4 py-3 font-medium">Workspaces</th>
                 <th className="px-4 py-3 font-medium">MCP URL</th>
                 <th className="w-12 px-4 py-3"></th>
               </tr>

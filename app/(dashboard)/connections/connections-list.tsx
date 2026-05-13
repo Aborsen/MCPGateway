@@ -147,7 +147,7 @@ export function ConnectionsList({ initial }: { initial: Connection[] }) {
             <Database className="mx-auto h-8 w-8 text-muted-foreground" />
             <h3 className="mt-3 text-sm font-medium">No connections yet</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Add an upstream MCP server to expose it through AI Connectivity.
+              Add an upstream MCP server to expose it through MCP Gateway.
             </p>
             <Button onClick={onAdd} className="mt-4">
               <Plus className="h-4 w-4" />
@@ -222,7 +222,7 @@ export function ConnectionsList({ initial }: { initial: Connection[] }) {
                       <SortHeader column="type" label="Type" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                       <SortHeader column="upstreamUrl" label="Upstream URL" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                       <SortHeader column="toolCount" label="Tools" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-                      <SortHeader column="workspaceCount" label="Teams" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                      <SortHeader column="workspaceCount" label="Workspaces" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
                       <th className="w-12 px-4 py-3"></th>
                     </tr>
                   </thead>

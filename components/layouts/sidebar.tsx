@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -23,7 +24,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/connections", label: "Connections", icon: Plug },
   { href: "/users", label: "Users", icon: Users },
-  { href: "/teams", label: "Workspaces", icon: FolderTree },
+  { href: "/workspaces", label: "Workspaces", icon: FolderTree },
   { href: "/permissions", label: "Permissions", icon: ShieldCheck },
   { href: "/audit", label: "Audit", icon: FileText },
 ];
@@ -53,10 +54,15 @@ export function Sidebar({ user }: { user: { name: string; email: string; role: s
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div className="flex items-center gap-2 p-4">
-        <div className="flex h-7 w-7 items-center justify-center rounded bg-primary text-primary-foreground text-sm font-bold">
-          +
-        </div>
-        <div className="text-sm font-semibold">AI Connectivity</div>
+        <Image
+          src="/logo.png"
+          alt="MCP Gateway"
+          width={28}
+          height={28}
+          className="rounded"
+          priority
+        />
+        <div className="text-sm font-semibold">MCP Gateway</div>
       </div>
 
       <nav className="flex-1 px-2 py-2 space-y-0.5">

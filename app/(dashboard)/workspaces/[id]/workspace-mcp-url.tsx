@@ -73,7 +73,7 @@ export function WorkspaceMcpUrl({
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>
               Shareable with every workspace member. Each member signs in via OAuth with
-              their own AI Connectivity credentials.
+              their own MCP Gateway credentials.
             </span>
             <Button variant="ghost" size="sm" onClick={onGenerateOrRotate} disabled={pending}>
               <RefreshCcw className={`h-3 w-3 ${pending ? "animate-spin" : ""}`} />
@@ -85,7 +85,7 @@ export function WorkspaceMcpUrl({
             <pre className="mt-2 overflow-x-auto rounded bg-background p-3 font-mono">
 {`{
   "mcpServers": {
-    "ai-connectivity": {
+    "mcp-gateway": {
       "url": "${url}"
     }
   }

@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Connectivity",
-  description: "Devart AI Connectivity admin panel",
+  title: "MCP Gateway",
+  description: "Devart MCP Gateway — admin panel",
 };
 
 export default function RootLayout({

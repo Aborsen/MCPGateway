@@ -9,6 +9,14 @@ const nextConfig: NextConfig = {
   // at AccessToken.save -> generateTokenId. Marking it external forces
   // a single require() at runtime.
   serverExternalPackages: ["oidc-provider"],
+
+  async redirects() {
+    return [
+      // Legacy /teams paths — moved to /workspaces in the MCP Gateway rebrand.
+      { source: "/teams", destination: "/workspaces", permanent: true },
+      { source: "/teams/:path*", destination: "/workspaces/:path*", permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;
