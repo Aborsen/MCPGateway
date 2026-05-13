@@ -20,10 +20,10 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Workspace", icon: LayoutDashboard, exact: true },
+  { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/connections", label: "Connections", icon: Plug },
   { href: "/users", label: "Users", icon: Users },
-  { href: "/teams", label: "Teams", icon: FolderTree },
+  { href: "/teams", label: "Workspaces", icon: FolderTree },
   { href: "/permissions", label: "Permissions", icon: ShieldCheck },
   { href: "/audit", label: "Audit", icon: FileText },
 ];
