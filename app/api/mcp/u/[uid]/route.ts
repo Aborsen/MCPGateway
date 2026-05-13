@@ -8,7 +8,8 @@ import {
   classifyToolByName,
   extractTableFromArgs,
   isRawQueryTool,
-  filterListedTablesPayload,
+  filterListedTablesText,
+  LIST_TABLES_TOOL_NAMES,
   type UserAccess,
 } from "@/lib/mcp/permission-filter";
 import { listToolsFromUpstream, callToolOnUpstream } from "@/lib/mcp/upstream-client";
@@ -273,8 +274,8 @@ export async function POST(request: Request, { params }: RouteCtx) {
           args,
         );
 
-        if (connector.allowedTables && (toolName === "list_tables" || toolName === "list_resources")) {
-          result = filterListPayload(result, connector.allowedTables);
+        if (connector.allowedTables && LIST_TABLES_TOOL_NAMES.has(toolName)) {
+          result = filterListResult(result, connector.allowedTables);
         }
 
         response = jsonRpcSuccess(body.id ?? null, result);
@@ -374,18 +375,12 @@ async function aggregateTools(access: UserAccess[]) {
   return all.flat();
 }
 
-function filterListPayload(result: McpToolResult, allowed: string[]): McpToolResult {
+function filterListResult(result: McpToolResult, allowed: string[]): McpToolResult {
   return {
     ...result,
     content: result.content.map((c) => {
       if (c.type !== "text") return c;
-      try {
-        const parsed = JSON.parse(c.text);
-        const filtered = filterListedTablesPayload(parsed, allowed);
-        return { type: "text" as const, text: JSON.stringify(filtered, null, 2) };
-      } catch {
-        return c;
-      }
+      return { type: "text" as const, text: filterListedTablesText(c.text, allowed) };
     }),
   };
 }

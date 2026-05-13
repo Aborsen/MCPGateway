@@ -211,3 +211,95 @@ export function filterListedTablesPayload(
   }
   return obj;
 }
+
+// Tool names the upstream uses to LIST tables/objects. Their text results
+// get filtered server-side so users never see tables outside the allowed
+// list. Add to this set when adopting new upstream MCP servers.
+export const LIST_TABLES_TOOL_NAMES = new Set([
+  "Objects",         // Skyvia / Devart connectors
+  "list_tables",     // Postgres-style
+  "list_resources",  // generic
+  "list_modules",    // Zoho native
+  "list_objects",    // generic
+  "tables",
+]);
+
+const NAME_FIELDS = [
+  "name",
+  "Name",
+  "TableName",
+  "table_name",
+  "object_name",
+  "ObjectName",
+  "module",
+  "fullName",
+];
+
+// Filters a list-tables tool's text response down to only the allowed tables.
+// Handles JSON (array of strings, array of objects with a name field,
+// wrapped { objects/tables/results: [] }) and CSV (header + rows). Returns
+// the original text unchanged if no shape matches — better to over-show
+// than corrupt the response.
+export function filterListedTablesText(raw: string, allowed: string[]): string {
+  if (!raw) return raw;
+  const allowedLower = new Set(allowed.map((t) => t.toLowerCase()));
+  return filterAsJson(raw, allowedLower) ?? filterAsCsv(raw, allowedLower) ?? raw;
+}
+
+function filterAsJson(raw: string, allowedLower: Set<string>): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const filtered = filterParsedValue(parsed, allowedLower);
+  if (filtered === undefined) return null;
+  return JSON.stringify(filtered, null, 2);
+}
+
+function filterParsedValue(value: unknown, allowedLower: Set<string>): unknown {
+  // Array of strings
+  if (Array.isArray(value) && value.every((x) => typeof x === "string")) {
+    return (value as string[]).filter((s) => allowedLower.has(s.toLowerCase()));
+  }
+  // Array of objects with a name field
+  if (Array.isArray(value)) {
+    return value.filter((item) => {
+      if (!item || typeof item !== "object") return false;
+      const obj = item as Record<string, unknown>;
+      for (const f of NAME_FIELDS) {
+        const v = obj[f];
+        if (typeof v === "string") return allowedLower.has(v.toLowerCase());
+      }
+      return false;
+    });
+  }
+  // Object wrapping a list
+  if (value && typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    for (const key of ["objects", "tables", "results", "data", "items", "rows"]) {
+      if (Array.isArray(o[key])) {
+        return { ...o, [key]: filterParsedValue(o[key], allowedLower) };
+      }
+    }
+  }
+  return undefined;
+}
+
+function filterAsCsv(raw: string, allowedLower: Set<string>): string | null {
+  const lines = raw.split(/\r?\n/).filter((l) => l.length > 0);
+  if (lines.length < 2) return null;
+  const headers = lines[0].split(",");
+  if (headers.length < 2) return null;
+  const nameIdx = headers.findIndex((h) => NAME_FIELDS.includes(h.trim()));
+  if (nameIdx < 0) return null;
+
+  const out: string[] = [lines[0]];
+  for (let i = 1; i < lines.length; i++) {
+    const cells = lines[i].split(",");
+    const name = cells[nameIdx]?.trim();
+    if (name && allowedLower.has(name.toLowerCase())) out.push(lines[i]);
+  }
+  return out.join("\n");
+}
