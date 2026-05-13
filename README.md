@@ -1,111 +1,157 @@
-# AI Connectivity
+# MCP Gateway
 
-Demo prototype of Devart's "AI Connectivity" admin panel: an **MCP proxy** with users, workspaces, permissions, and an audit log. Built with Next.js 16 + Prisma + Auth.js, deployable to Vercel.
+A multi-tenant proxy that brokers [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) JSON-RPC traffic from Claude Code (and other MCP clients) to many heterogeneous upstream MCP servers — Jira, HubSpot, Salesforce, Zoho, Postgres, internal services. Permissions, OAuth, table-level allowlists, and a full audit log are enforced at the gateway, so end-users get a single OAuth-secured URL instead of juggling per-vendor tokens.
+
+Built with Next.js 16 + Prisma 7 + Postgres + Auth.js v5 + `oidc-provider`. Deployed on Vercel.
 
 ## What it does
 
-1. Admin configures upstream **MCP servers** as Connections (Jira, HubSpot, Salesforce, Zoho, Postgres, …)
-2. Admin creates **Workspaces** that bundle Connections, optionally restricting access to specific tables
-3. Admin assigns **Users** to Workspaces with `read`, `write`, and/or `delete` permissions
-4. Admin generates a unique **MCP server URL** per user and pastes it into Claude Code's `.mcp.json`
-5. Every tool call from Claude Code is proxied, permission-checked, and **audited** in real time
+1. Admin registers **Connections** (one row per upstream MCP server: Jira Cloud, Salesforce, etc.).
+2. Admin creates **Workspaces** that bundle Connections, optionally restricting which tables/objects each workspace can touch.
+3. Admin adds **Users** to Workspaces with permission levels (`select | insert | update | delete | execute`), or grants users direct per-Connection access.
+4. Each user (or each workspace) gets its own OAuth-secured MCP URL. Claude Code completes a PKCE flow against the gateway, then sends `Authorization: Bearer …` on every JSON-RPC call.
+5. Every tool call is permission-checked at both `tools/list` (filter the menu) and `tools/call` (block disallowed actions), then forwarded to the right upstream — and recorded in the **Audit Log** within milliseconds.
+
+## Roles
+
+| Role | Capability |
+|---|---|
+| `OWNER` | Tenant root. Only role allowed to delete users and reassign roles. Gated by `requireOwner()` in [lib/auth.ts](lib/auth.ts). |
+| `ADMIN` | Manages connections, workspaces, permissions, and audit. Gated by `requireAdmin()`. |
+| `USER` | No admin UI access. Used only as the OAuth account on the MCP endpoint. |
 
 ## Quick start (local)
 
-You need a Postgres database. The easiest path is a free [Neon](https://neon.tech) project (30-second signup). Then:
+You need a Postgres database. The easiest path is a free [Neon](https://neon.tech) project (30-second signup).
 
 ```bash
-# 1. Put your Postgres URL in .env (copy from .env.example)
-cp .env.example .env
-# Edit .env and set DATABASE_URL=postgresql://...
-
-# 2. Install + push schema + seed
+# 1. Clone and install
+git clone <repo-url> mcp-gateway
+cd mcp-gateway
 npm install
-npm run db:push          # creates all tables in your Postgres
-npm run db:seed          # admin + 3 users + 5 sample connections + 2 workspaces
 
-# 3. Run
-npm run dev              # http://localhost:3000
+# 2. Copy the env template and fill in secrets
+cp .env.example .env.local
+#   - DATABASE_URL    -> your Postgres connection string (use pooled URL on Vercel)
+#   - AUTH_SECRET     -> openssl rand -base64 32
+#   - MCP_CONFIG_KEY  -> openssl rand -base64 32
+#   - OIDC_ISSUER     -> http://localhost:3000  (exact, no trailing slash)
+#   - OIDC_COOKIE_KEY -> openssl rand -hex 32
+#   - OIDC_JWKS       -> single-line output of: npx tsx scripts/generate-jwks.ts
+#   - CRON_SECRET     -> openssl rand -hex 32
+
+# 3. Initialise the DB and seed demo data
+npm run db:migrate   # apply committed migrations (use db:push for quick iteration)
+npm run db:seed      # admin + 3 users + 5 connections + 2 workspaces
+
+# 4. Run
+npm run dev          # http://localhost:3000
 ```
 
-Login as `admin@devart.com` / `admin123`.
+### Seeded accounts
 
-Seeded users:
-- `admin@devart.com` / `admin123` — admin
-- `alice@devart.com` / `demo123` — Sales Team workspace (HubSpot + Salesforce + Zoho, read+write, restricted tables)
-- `bob@devart.com` / `demo123` — Sales Team workspace (read-only)
-- `carol@devart.com` / `demo123` — Engineering workspace (Jira + Postgres, full perms)
+| Email | Password | Role | Membership |
+|---|---|---|---|
+| `admin@devart.com` | `admin123` | `OWNER` | Engineering (full access) |
+| `alice@devart.com` | `demo123` | `USER`  | Sales Team — `select`, `insert`, `update` on HubSpot / Salesforce / Zoho (restricted to a curated table set) |
+| `bob@devart.com`   | `demo123` | `USER`  | Sales Team — `select` only |
+| `carol@devart.com` | `demo123` | `USER`  | Engineering — full access on Jira and Postgres, no table restrictions |
+
+All seeded connectors point at `mcp.example.com/*` and resolve through a built-in mock provider, so the whole demo works offline.
 
 ## Demo flow
 
-1. Open **Connections** — see the 5 seeded data sources. Open one to view its tool catalog.
-2. Open **Workspaces** → **Sales Team** — see how HubSpot is restricted to `contacts, deals` only.
-3. Open **Users** → click Alice → click **Generate MCP URL**. Copy the URL.
-4. Paste into a `.mcp.json` for Claude Code:
+1. Log in as `admin@devart.com` → land on **Dashboard** (live overview of users, connectors, queries, errors).
+2. **Connections** → open Jira Cloud → see its tool catalog with per-tool permission overrides.
+3. **Workspaces** → **Sales Team** → see HubSpot restricted to `contacts, deals` only. Hit **Copy MCP URL** to grab the workspace's OAuth URL — every member of Sales Team can paste the same URL into their own Claude Code.
+4. **Users** → Alice → grab her personal MCP URL (the union of her workspace memberships + direct grants).
+5. Drop the URL into Claude Code's `~/.claude.json`:
    ```json
-   {
-     "mcpServers": {
-       "ai-connectivity": { "url": "<copied URL>" }
-     }
-   }
+   { "mcpServers": { "mcp-gateway": { "url": "<copied URL>" } } }
    ```
-5. In Claude Code: `claude mcp list` then ask the model to list HubSpot contacts. Calls land in the **Audit Log** within seconds.
-6. Try a write/delete and you'll see it blocked (Alice has only read+write, not delete).
+6. Claude Code does the OAuth dance (PKCE), then `tools/list` returns just the tools Alice is allowed to use. Try a write — it succeeds (Alice has `update`). Try a delete — blocked. The action lands in **Audit** in real time.
+7. **Specifications** → open the avatar menu at the bottom of the sidebar to read the full architecture/spec inside the app (OWNER/ADMIN-gated).
 
 ## Deploying to Vercel
 
-The repo is set up to deploy cleanly. After the first Vercel deploy:
+The repo is set up to deploy cleanly with `vercel.json` declaring the audit-prune cron.
 
-1. In the Vercel project, go to **Storage** → **Create Database** → **Postgres** (or Neon). This auto-sets `POSTGRES_URL` and friends — but Prisma wants `DATABASE_URL`, so add it as an alias.
-2. **Environment variables** to set in Vercel project settings:
+1. **Postgres**: provision Neon / Vercel Postgres / Supabase. Use the **pooled** connection string as `DATABASE_URL`.
+2. **Environment variables** to set in the Vercel project settings:
 
    | Variable | Value |
    |---|---|
-   | `DATABASE_URL` | Postgres connection string (use the **pooled** one) |
+   | `DATABASE_URL` | Postgres connection string (pooled) |
    | `AUTH_SECRET` | `openssl rand -base64 32` |
    | `AUTH_TRUST_HOST` | `true` |
-   | `MCP_CONFIG_KEY` | `openssl rand -base64 32` |
-   | `OIDC_ISSUER` | Your prod URL, no trailing slash (e.g. `https://app.example.com`) |
+   | `MCP_CONFIG_KEY` | `openssl rand -base64 32` — encrypts upstream connector credentials |
+   | `OIDC_ISSUER` | Exact deploy origin, no trailing slash (e.g. `https://mcpgateway.vercel.app`) |
    | `OIDC_COOKIE_KEY` | `openssl rand -hex 32` |
    | `OIDC_JWKS` | Output of `npx tsx scripts/generate-jwks.ts`, as a single-line string |
-   | `CRON_SECRET` | `openssl rand -hex 32` — used by the daily audit-prune cron |
+   | `CRON_SECRET` | `openssl rand -hex 32` — Vercel-cron auth for the audit-prune job |
    | `AUDIT_RETENTION_DAYS` | (Optional) days of audit-log rows to keep; defaults to `90` |
 
-   > **Vercel preview gotcha:** `OIDC_ISSUER` must match the deploy origin exactly. Preview deployments have hostnames that differ from the prod alias, so the OAuth flow only works on the prod alias by default. Either set `OIDC_ISSUER` per-environment or restrict OAuth testing to the prod alias.
+   > **Preview-deploy gotcha:** `OIDC_ISSUER` must match the request origin exactly. Vercel preview deployments use different hostnames than the prod alias, so the OAuth flow only works on the prod alias unless you scope `OIDC_ISSUER` per-environment.
 
-3. **Bootstrap the schema and seed data** — run locally against the prod URL once. The seed script refuses to run with `NODE_ENV=production` unless you pass `--allow-prod` (it deletes every row in every table before re-inserting demo data, so the guard is intentional):
+3. **Bootstrap the schema and seed** — run locally against the prod URL once. The seed refuses to run with `NODE_ENV=production` unless you pass `--allow-prod` (it deletes every row in every table before re-inserting demo data, so the guard is deliberate):
    ```bash
    DATABASE_URL="<prod url>" npm run db:migrate
-   DATABASE_URL="<prod url>" npx tsx prisma/seed.ts --allow-prod
+   NODE_ENV=production DATABASE_URL="<prod url>" npx tsx prisma/seed.ts --allow-prod
    ```
-4. **Redeploy** the latest commit so the env vars take effect.
-5. (Optional) Enable **Fluid Compute** in Vercel project settings so the MCP route can use the full 60s `maxDuration` (already configured in `vercel.json`).
+4. **Redeploy** so the env vars take effect.
+5. (Optional) Enable **Fluid Compute** in Vercel project settings so the MCP route can use its full `maxDuration: 60` setting (`vercel.json`).
 
 ## Architecture
 
-- **`app/api/mcp/u/[uid]/route.ts`** — JSON-RPC 2.0 over HTTP. Handles `initialize`, `tools/list`, `tools/call`, `ping`, and the `notifications/*` lifecycle. Tools are namespaced as `<slug>__<tool>` (e.g. `hubspot__list_contacts`). The `uid` URL segment is a routing handle; the OAuth-authenticated account is authoritative for permissions.
-- **`lib/oidc/`** — OAuth 2.1 / OIDC provider (`oidc-provider`) for the MCP endpoint. Claude Code does PKCE, receives an opaque access token, and sends it as `Authorization: Bearer …` on every JSON-RPC request. Adapter is Prisma-backed (`OidcModel` table); JWKs come from the `OIDC_JWKS` env var.
-- **`lib/mcp/upstream-client.ts`** — Calls upstream MCP servers. If the upstream URL is `mcp.example.com/*` or `mock:*` (the seeded demo URLs), uses a built-in mock provider so the demo works offline.
-- **`lib/mcp/permission-filter.ts`** — Rolls up workspace + direct-grant permissions per user, applies tool-level `select`/`insert`/`update`/`delete`/`execute` checks, and inspects `table_name` / `module` / `object_name` args against workspace allow-lists. Blocks raw-SQL tools (`query`, `run_soql`, `execute_ddl`, `run_apex`) when table restrictions are in effect. Also post-filters list-tool responses so restricted tables don't leak in `tools/call` results.
-- **`lib/mcp/audit.ts`** — Writes audit rows out-of-band via `next/server`'s `after()` so they never block the response. Bodies are size-capped via `truncateJson()` in `lib/json.ts`.
-- **`lib/auth.ts`** — Auth.js v5 + Credentials provider + JWT sessions, used by the admin dashboard (not the MCP endpoint). `requireAuth()` / `requireAdmin()` return either the session or a `NextResponse` (401/403) — callers must check the return type before using it.
-- **`lib/crypto.ts`** — libsodium secretbox encryption of upstream connector credentials, keyed by `MCP_CONFIG_KEY` (required in production).
+### MCP endpoints
+
+- **[app/api/mcp/u/[uid]/route.ts](app/api/mcp/u/[uid]/route.ts)** — per-user JSON-RPC endpoint. Aggregates the union of every workspace membership + every direct grant for the OAuth-authenticated user.
+- **[app/api/mcp/w/[uid]/route.ts](app/api/mcp/w/[uid]/route.ts)** — per-workspace endpoint. Same JSON-RPC dispatcher but the permission scope is *only* that workspace's connections; direct user grants are intentionally ignored so the workspace URL stays scoped to the workspace.
+
+Both routes handle `initialize`, `tools/list`, `tools/call`, `ping`, and the `notifications/*` lifecycle. Tools are namespaced as `<slug>__<tool>` (e.g. `hubspot__list_contacts`). The `uid` URL segment is a routing handle only — the OAuth-authenticated account is authoritative for permissions. The `initialize` response includes a `serverInfo` block with `title` and `icons` for SEP-973 / 2025-11-25 forward-compat.
+
+### Auth
+
+- **[lib/oidc/](lib/oidc/)** — OAuth 2.1 / OIDC provider (`oidc-provider`) for the MCP endpoint. PKCE required; opaque access tokens (1h TTL) with rotating refresh tokens; resource indicators bind tokens to a specific MCP URL. Prisma-backed adapter; JWKs from `OIDC_JWKS`.
+- **[lib/auth.ts](lib/auth.ts)** — Auth.js v5 + Credentials provider + JWT sessions, for the admin dashboard only. `requireAuth()` / `requireAdmin()` / `requireOwner()` return either the session or a `NextResponse` (401/403) — callers must check the return type before using it.
+- **OIDC discovery**: `/.well-known/oauth-authorization-server` (RFC 8414) and `/.well-known/oauth-protected-resource` (RFC 9728).
+
+### Permission filtering & upstream
+
+- **[lib/mcp/permission-filter.ts](lib/mcp/permission-filter.ts)** — rolls up workspace + direct-grant permissions, classifies tools (`select` / `insert` / `update` / `delete` / `execute`) via heuristic regex with admin overrides, enforces table allowlists at call-time, and scrubs list-tool responses. Blocks raw-SQL/SOQL/APEX tools when a table allowlist is in effect.
+- **[lib/mcp/upstream-client.ts](lib/mcp/upstream-client.ts)** — outbound JSON-RPC + SSE to upstream MCP servers, 30-second tool-list cache, 55-second timeout. Three auth schemes: `bearer`, `customHeaders`, `none`.
+- **[lib/mcp/mock-upstream.ts](lib/mcp/mock-upstream.ts)** — deterministic responses for `mcp.example.com/*` and `mock:*` URLs so demos work offline.
+
+### Audit, rate limiting, crypto
+
+- **[lib/mcp/audit.ts](lib/mcp/audit.ts)** — writes audit rows out-of-band via `next/server`'s `after()` so they never block the response. Bodies size-capped via `truncateJson()`.
+- **[app/api/cron/prune-audit/route.ts](app/api/cron/prune-audit/route.ts)** — daily Vercel cron (03:00 UTC, declared in [vercel.json](vercel.json)) deletes audit rows older than `AUDIT_RETENTION_DAYS` (default 90). Gated by `Authorization: Bearer ${CRON_SECRET}`.
+- **[lib/rate-limit.ts](lib/rate-limit.ts)** — in-memory sliding-window limiter. Sign-in is 10 / 15 min per IP; MCP proxy is 60 / 60 s per OAuth account. Per-process — swap to Redis for horizontal scale.
+- **[lib/crypto.ts](lib/crypto.ts)** — libsodium secretbox (XChaCha20-Poly1305) for upstream connector credentials at rest, keyed by `MCP_CONFIG_KEY`. **Boot fails in production** if `MCP_CONFIG_KEY` is unset.
+
+### In-product spec viewer
+
+[app/specs/](app/specs/) renders [SPECIFICATIONS.md](SPECIFICATIONS.md) (the full architecture / feature / dependency spec) inside the app with a scroll-spy TOC. Reachable via the **Specifications** item in the avatar dropdown menu (OWNER/ADMIN-gated).
 
 ## Tech stack
 
 | Concern | Choice |
 | --- | --- |
 | Framework | Next.js 16 (App Router, Turbopack) |
-| UI | Tailwind CSS v4 + custom shadcn-style primitives |
+| UI | Tailwind v4 + Radix primitives (shadcn-style) + lucide-react |
 | DB / ORM | Prisma 7 + Postgres (`@prisma/adapter-pg`) |
-| Auth | Auth.js v5 (Credentials provider, JWT sessions) |
-| Crypto | libsodium (secretbox) |
+| Admin auth | Auth.js v5 (Credentials + JWT sessions) |
+| MCP auth | `oidc-provider` v9 — OAuth 2.1 / PKCE |
+| Crypto | libsodium secretbox |
 | Runtime | Node.js (the MCP proxy needs Node, not Edge) |
 
-## v1 limitations
+## v1 caveats
 
-- No SQL parsing — workspaces with table restrictions block raw-SQL tools entirely
-- No tool-permission override UI (the seeded mapping is used directly)
-- AI Chat is a placeholder (use Claude Code or another MCP client to test queries)
-- Audit log has no retention/cleanup cron
-- No per-token rate limiting
+- **In-memory rate limit** — per-process. Effective rate on multi-instance deploys is `instances × declared_rate`. Port to Redis when scaling horizontally.
+- **OIDC singleton WeakMaps** — `oidc-provider` keeps state in module-scoped WeakMaps; multi-instance deploys need either single-function affinity or a shared cache.
+- **Static JWKS** — no runtime rotation; rotating means redeploying with a new `OIDC_JWKS` and accepting that all issued tokens become invalid.
+- **Mock connectors only by default** — replace the seeded `upstreamUrl` + `configEncrypted` to point at real upstream MCP servers.
+- **AdminEvent not pruned** — the daily cron only prunes `AuditLog`; `AdminEvent` grows unbounded (low cardinality, so this is OK for the demo timeframe).
+- **No CSP / CSRF middleware** — Auth.js handles CSRF for its own routes; nothing custom on top.
+
+For everything else — full schema, all env vars, OAuth sequence diagrams, troubleshooting — see [SPECIFICATIONS.md](SPECIFICATIONS.md) or the in-app `/specs` viewer.
