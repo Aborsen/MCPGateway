@@ -3,9 +3,11 @@ import { redirect } from "next/navigation";
 import { getProvider } from "@/lib/oidc/provider";
 import { nodifyRequest } from "@/lib/oidc/bridge";
 import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/db";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { InteractionLoginForm } from "./login-form";
+import { ConsentForm } from "./consent-form";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,29 +70,58 @@ export default async function InteractionPage({ params }: Props) {
     if (!accountId) {
       return <ErrorCard title="Session lost" message="Please restart the connection from Claude." />;
     }
-    let grantId = details.grantId;
-    let grant;
-    if (grantId) {
-      grant = await provider.Grant.find(grantId);
-    } else {
-      grant = new provider.Grant({ accountId, clientId: details.params.client_id as string });
-    }
-    if (!grant) {
-      return <ErrorCard title="Grant not found" message="Please restart the connection from Claude." />;
-    }
-    const missingOidc = details.prompt.details.missingOIDCScope as string[] | undefined;
-    if (missingOidc?.length) grant.addOIDCScope(missingOidc.join(" "));
-    const missingResource = details.prompt.details.missingResourceScopes as Record<string, string[]> | undefined;
-    if (missingResource) {
-      for (const [resource, scopes] of Object.entries(missingResource)) {
-        grant.addResourceScope(resource, scopes.join(" "));
-      }
-    }
-    grantId = await grant.save();
-    const result = await provider.interactionResult(req, res, {
-      consent: { grantId },
-    }, { mergeWithLastSubmission: true });
-    redirect(result);
+
+    // Render the consent UI. User must click Allow to issue the grant.
+    // The /confirm route does all the Grant work after their click.
+    const clientId = details.params.client_id as string;
+    const client = await provider.Client.find(clientId);
+    const clientName = client?.clientName ?? clientId;
+    const user = await prisma.user.findUnique({
+      where: { id: accountId },
+      select: { email: true, name: true },
+    });
+    const missingOidc = (details.prompt.details.missingOIDCScope as string[] | undefined) ?? [];
+    const missingResource =
+      (details.prompt.details.missingResourceScopes as Record<string, string[]> | undefined) ?? {};
+    const resourceScopes = Object.entries(missingResource).flatMap(([resource, scopes]) =>
+      scopes.map((s) => ({ resource, scope: s })),
+    );
+
+    return (
+      <div className="mx-auto max-w-md p-8">
+        <Card>
+          <CardHeader>
+            <CardTitle>Allow access?</CardTitle>
+            <CardDescription>
+              <span className="font-medium text-foreground">{clientName}</span> wants to connect to
+              your AI Connectivity account
+              {user ? ` (${user.email})` : ""}.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {(missingOidc.length > 0 || resourceScopes.length > 0) && (
+              <div className="space-y-2 text-sm">
+                <div className="text-muted-foreground">It will be able to:</div>
+                <ul className="list-disc space-y-1 pl-5">
+                  {missingOidc.map((s) => (
+                    <li key={`oidc-${s}`}>Read your profile ({s})</li>
+                  ))}
+                  {resourceScopes.map((r) => (
+                    <li key={`${r.resource}-${r.scope}`}>
+                      Access MCP tools and data ({r.scope})
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              You can revoke access any time from your Settings page.
+            </p>
+            <ConsentForm uid={uid} />
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return <ErrorCard title="Unknown prompt" message={`Prompt: ${prompt}`} />;
