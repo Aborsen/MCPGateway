@@ -18,7 +18,7 @@ export async function GET() {
     where: { deletedAt: null },
     orderBy: { createdAt: "asc" },
     include: {
-      _count: { select: { workspaceUsers: true, mcpTokens: true } },
+      _count: { select: { workspaceUsers: true } },
     },
   });
   return NextResponse.json(users);

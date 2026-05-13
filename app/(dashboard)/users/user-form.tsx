@@ -26,7 +26,7 @@ export type User = {
   name: string;
   role: string;
   workspaceCount: number;
-  tokenCount: number;
+  hasMcpUrl: boolean;
   createdAt: string;
 };
 

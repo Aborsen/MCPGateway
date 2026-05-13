@@ -58,7 +58,6 @@ async function main() {
   await prisma.workspaceUser.deleteMany();
   await prisma.workspaceDataSource.deleteMany();
   await prisma.workspace.deleteMany();
-  await prisma.userMcpToken.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.adminEvent.deleteMany();
   await prisma.toolPermission.deleteMany();

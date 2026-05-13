@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { parsePermissions } from "@/lib/json";
-import { UserTokens } from "./user-tokens";
+import { UserMcpUrl } from "./user-tokens";
 
 export const dynamic = "force-dynamic";
 
@@ -26,18 +26,9 @@ export default async function UserDetailPage({ params }: PageProps) {
           },
         },
       },
-      mcpTokens: { orderBy: { createdAt: "desc" } },
     },
   });
   if (!user) notFound();
-
-  const tokens = user.mcpTokens.map((t) => ({
-    id: t.id,
-    label: t.label,
-    createdAt: t.createdAt.toISOString(),
-    lastUsedAt: t.lastUsedAt?.toISOString() ?? null,
-    revokedAt: t.revokedAt?.toISOString() ?? null,
-  }));
 
   return (
     <>
@@ -129,15 +120,15 @@ export default async function UserDetailPage({ params }: PageProps) {
 
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>MCP server URLs</CardTitle>
+            <CardTitle>MCP connection URL</CardTitle>
             <CardDescription>
-              Each token is a unique MCP server URL. Paste it into Claude Code&apos;s{" "}
-              <span className="font-mono text-xs">.mcp.json</span> to give this user access to all
-              data sources in their workspaces.
+              Paste this URL into Claude Code&apos;s{" "}
+              <span className="font-mono text-xs">.mcp.json</span>. The user will sign in via OAuth
+              on first connect — the URL itself is not a secret.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <UserTokens userId={user.id} initial={tokens} />
+            <UserMcpUrl userId={user.id} initialMcpUid={user.mcpUid} />
           </CardContent>
         </Card>
       </div>

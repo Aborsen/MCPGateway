@@ -31,7 +31,7 @@ export function UsersList({ initial }: { initial: User[] }) {
     setOpen(true);
   }
   async function onDelete(u: User) {
-    if (!confirm(`Remove user "${u.name}"? Their MCP tokens will stop working immediately.`)) return;
+    if (!confirm(`Remove user "${u.name}"? Their MCP URL will stop working immediately.`)) return;
     await fetch(`/api/users/${u.id}`, { method: "DELETE" });
     startTransition(() => router.refresh());
   }
@@ -58,7 +58,7 @@ export function UsersList({ initial }: { initial: User[] }) {
                 <th className="px-4 py-3 font-medium">Email</th>
                 <th className="px-4 py-3 font-medium">Role</th>
                 <th className="px-4 py-3 font-medium">Teams</th>
-                <th className="px-4 py-3 font-medium">MCP Tokens</th>
+                <th className="px-4 py-3 font-medium">MCP URL</th>
                 <th className="w-12 px-4 py-3"></th>
               </tr>
             </thead>
@@ -76,7 +76,9 @@ export function UsersList({ initial }: { initial: User[] }) {
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{u.workspaceCount}</td>
                   <td className="px-4 py-3 text-muted-foreground">
-                    {u.tokenCount === 0 ? (
+                    {u.hasMcpUrl ? (
+                      <Badge variant="success">Issued</Badge>
+                    ) : (
                       <Link
                         href={`/users/${u.id}`}
                         className="inline-flex items-center gap-1 text-primary hover:underline"
@@ -84,8 +86,6 @@ export function UsersList({ initial }: { initial: User[] }) {
                         <Key className="h-3 w-3" />
                         Generate
                       </Link>
-                    ) : (
-                      `${u.tokenCount} active`
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">

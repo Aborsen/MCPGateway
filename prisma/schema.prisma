@@ -21,7 +21,6 @@ model User {
   deletedAt    DateTime?
 
   workspaceUsers WorkspaceUser[]
-  mcpTokens      UserMcpToken[]
   auditLogs      AuditLog[]
   eventsActed    AdminEvent[] @relation("AdminEventActor")
   eventsTargeted AdminEvent[] @relation("AdminEventTargetUser")
@@ -119,17 +118,6 @@ model WorkspaceUser {
   permissions String
 
   @@unique([workspaceId, userId])
-}
-
-model UserMcpToken {
-  id         String    @id @default(cuid())
-  userId     String
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash  String    @unique
-  label      String?
-  lastUsedAt DateTime?
-  revokedAt  DateTime?
-  createdAt  DateTime  @default(now())
 }
 
 model AdminEvent {

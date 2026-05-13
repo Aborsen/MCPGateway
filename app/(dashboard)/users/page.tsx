@@ -8,7 +8,7 @@ export default async function UsersPage() {
     where: { deletedAt: null },
     orderBy: { createdAt: "asc" },
     include: {
-      _count: { select: { workspaceUsers: true, mcpTokens: true } },
+      _count: { select: { workspaceUsers: true } },
     },
   });
   return (
@@ -19,7 +19,7 @@ export default async function UsersPage() {
         name: u.name,
         role: u.role,
         workspaceCount: u._count.workspaceUsers,
-        tokenCount: u._count.mcpTokens,
+        hasMcpUrl: !!u.mcpUid,
         createdAt: u.createdAt.toISOString(),
       }))}
     />
