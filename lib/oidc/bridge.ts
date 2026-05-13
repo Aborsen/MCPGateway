@@ -24,13 +24,17 @@ function patchSocket(request: Request, req: IncomingMessage): void {
   const url = new URL(request.url);
   const proto = request.headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "");
   const encrypted = proto === "https";
-  // Stub a minimal socket. Cast through unknown because IncomingMessage.socket
-  // is typed as a full net.Socket — we only need the field oidc-provider reads.
-  (req as unknown as { socket: { encrypted: boolean; remoteAddress: string } }).socket = {
-    encrypted,
-    remoteAddress:
-      request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "127.0.0.1",
-  };
+  const remoteAddress =
+    request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "127.0.0.1";
+  // fetch-to-node's IncomingMessage throws on `req.socket = ...`. Override
+  // the property descriptor directly so oidc-provider's URL builder and any
+  // IP-aware code see a usable socket-shaped object.
+  Object.defineProperty(req, "socket", {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value: { encrypted, remoteAddress },
+  });
 }
 
 export async function handleWithProvider(request: Request): Promise<Response> {
