@@ -16,11 +16,21 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { UserFormDialog, type User } from "./user-form";
 
-export function UsersList({ initial }: { initial: User[] }) {
+export function UsersList({
+  initial,
+  viewerRole,
+  viewerId,
+}: {
+  initial: User[];
+  viewerRole: string;
+  viewerId: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
   const [, startTransition] = useTransition();
+
+  const isSuperAdmin = viewerRole === "SUPER_ADMIN";
 
   function onInvite() {
     setEditing(null);
@@ -32,7 +42,12 @@ export function UsersList({ initial }: { initial: User[] }) {
   }
   async function onDelete(u: User) {
     if (!confirm(`Remove user "${u.name}"? Their MCP URL will stop working immediately.`)) return;
-    await fetch(`/api/users/${u.id}`, { method: "DELETE" });
+    const res = await fetch(`/api/users/${u.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error ?? `Delete failed (${res.status})`);
+      return;
+    }
     startTransition(() => router.refresh());
   }
 
@@ -63,7 +78,11 @@ export function UsersList({ initial }: { initial: User[] }) {
               </tr>
             </thead>
             <tbody>
-              {initial.map((u) => (
+              {initial.map((u) => {
+                const isTargetSuperAdmin = u.role === "SUPER_ADMIN";
+                const canEdit = isSuperAdmin || !isTargetSuperAdmin;
+                const canDelete = isSuperAdmin && u.id !== viewerId;
+                return (
                 <tr key={u.id} className="border-t border-border hover:bg-muted/30">
                   <td className="px-4 py-3">
                     <Link href={`/users/${u.id}`} className="font-medium text-foreground hover:text-primary">
@@ -72,7 +91,17 @@ export function UsersList({ initial }: { initial: User[] }) {
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{u.email}</td>
                   <td className="px-4 py-3">
-                    <Badge variant={u.role === "ADMIN" ? "default" : "secondary"}>{u.role}</Badge>
+                    <Badge
+                      variant={
+                        u.role === "SUPER_ADMIN"
+                          ? "destructive"
+                          : u.role === "ADMIN"
+                            ? "default"
+                            : "secondary"
+                      }
+                    >
+                      {u.role}
+                    </Badge>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{u.workspaceCount}</td>
                   <td className="px-4 py-3 text-muted-foreground">
@@ -96,23 +125,28 @@ export function UsersList({ initial }: { initial: User[] }) {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => onEdit(u)}>
+                        <DropdownMenuItem onSelect={() => onEdit(u)} disabled={!canEdit}>
                           <Pencil className="h-4 w-4" />
                           Edit
                         </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onSelect={() => onDelete(u)}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Remove
-                        </DropdownMenuItem>
+                        {canDelete && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onSelect={() => onDelete(u)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Remove
+                            </DropdownMenuItem>
+                          </>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -122,6 +156,7 @@ export function UsersList({ initial }: { initial: User[] }) {
         open={open}
         onOpenChange={setOpen}
         user={editing}
+        viewerRole={viewerRole}
         onSaved={() => {
           setOpen(false);
           startTransition(() => router.refresh());

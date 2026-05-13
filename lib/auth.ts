@@ -92,13 +92,29 @@ export async function requireAuth(): Promise<Session | NextResponse> {
   return session;
 }
 
-// Returns the session or a 401/403 response.
+// Admin tier accepts both ADMIN and SUPER_ADMIN.
+const ADMIN_ROLES = new Set(["ADMIN", "SUPER_ADMIN"]);
+
+// Returns the session or a 401/403 response. Accepts ADMIN or SUPER_ADMIN.
 export async function requireAdmin(): Promise<Session | NextResponse> {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (session.user.role !== "ADMIN") {
+  if (!ADMIN_ROLES.has(session.user.role)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  return session;
+}
+
+// SUPER_ADMIN only. Used to gate destructive or escalation actions
+// (delete user, assign SUPER_ADMIN role).
+export async function requireSuperAdmin(): Promise<Session | NextResponse> {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (session.user.role !== "SUPER_ADMIN") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   return session;

@@ -9,7 +9,7 @@ const CreateSchema = z.object({
   email: z.string().email(),
   name: z.string().min(1).max(100),
   password: z.string().min(6),
-  role: z.enum(["ADMIN", "USER"]).default("USER"),
+  role: z.enum(["SUPER_ADMIN", "ADMIN", "USER"]).default("USER"),
 });
 
 export async function GET() {
@@ -34,6 +34,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 });
   }
   const data = parsed.data;
+  // Only SUPER_ADMIN can create another SUPER_ADMIN.
+  if (data.role === "SUPER_ADMIN" && session.user.role !== "SUPER_ADMIN") {
+    return NextResponse.json(
+      { error: "Only SUPER_ADMIN can assign the SUPER_ADMIN role" },
+      { status: 403 },
+    );
+  }
   const existing = await prisma.user.findUnique({ where: { email: data.email } });
   if (existing) {
     return NextResponse.json({ error: "Email already in use" }, { status: 409 });

@@ -34,11 +34,13 @@ export function UserFormDialog({
   open,
   onOpenChange,
   user,
+  viewerRole,
   onSaved,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   user: User | null;
+  viewerRole: string;
   onSaved: () => void;
 }) {
   const [email, setEmail] = useState("");
@@ -132,6 +134,9 @@ export function UserFormDialog({
               <SelectContent>
                 <SelectItem value="USER">User</SelectItem>
                 <SelectItem value="ADMIN">Admin</SelectItem>
+                {viewerRole === "SUPER_ADMIN" && (
+                  <SelectItem value="SUPER_ADMIN">Super Admin</SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>
