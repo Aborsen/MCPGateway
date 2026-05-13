@@ -177,7 +177,12 @@ export function WorkspaceEditor({
                         placeholder="contacts, deals"
                         className="h-8 max-w-sm flex-1 font-mono text-xs"
                       />
-                      <TablesViewer dataSourceId={ds.id} dataSourceName={ds.name} />
+                      <TablesViewer
+                        dataSourceId={ds.id}
+                        dataSourceName={ds.name}
+                        initialSelected={selected.allowedTables ?? []}
+                        onApply={(names) => updateAllowedTables(ds.id, names.join(", "))}
+                      />
                     </div>
                   )}
                 </div>

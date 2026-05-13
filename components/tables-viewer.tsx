@@ -29,9 +29,16 @@ type TablesResponse = {
 export function TablesViewer({
   dataSourceId,
   dataSourceName,
+  initialSelected,
+  onApply,
 }: {
   dataSourceId: string;
   dataSourceName: string;
+  /** If provided, these names will be pre-checked when the dialog opens. */
+  initialSelected?: string[];
+  /** If provided, an "Apply" button replaces "Copy selected" and the
+   *  current selection is written back via this callback when clicked. */
+  onApply?: (names: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -63,13 +70,17 @@ export function TablesViewer({
     if (open && !data && !loading) void load(false);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reset selection/search when the dialog closes so each open is fresh.
+  // On open: pre-select the names that are already allowed (if any), and
+  // clear search. On close: clear everything so the next open is fresh.
   useEffect(() => {
-    if (!open) {
+    if (open) {
+      setSearch("");
+      setSelected(new Set(initialSelected ?? []));
+    } else {
       setSearch("");
       setSelected(new Set());
     }
-  }, [open]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => {
     const all = data?.tables ?? [];
@@ -153,20 +164,34 @@ export function TablesViewer({
                   )}
                 </span>
                 <div className="flex items-center gap-2">
-                  {selected.size > 0 && (
+                  {onApply ? (
                     <Button
-                      variant="outline"
                       size="sm"
-                      onClick={() => copy(Array.from(selected), "selected")}
+                      onClick={() => {
+                        onApply(Array.from(selected));
+                        setOpen(false);
+                      }}
                     >
-                      {copied === "selected" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                      Copy selected ({selected.size})
+                      Apply ({selected.size})
                     </Button>
+                  ) : (
+                    <>
+                      {selected.size > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => copy(Array.from(selected), "selected")}
+                        >
+                          {copied === "selected" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                          Copy selected ({selected.size})
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => copy(data.tables ?? [], "all")}>
+                        {copied === "all" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                        Copy all
+                      </Button>
+                    </>
                   )}
-                  <Button variant="outline" size="sm" onClick={() => copy(data.tables ?? [], "all")}>
-                    {copied === "all" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                    Copy all
-                  </Button>
                 </div>
               </div>
 
