@@ -2,10 +2,11 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { slugifyHeading } from "./toc-utils";
 
-// Markdown renderer. Tailwind doesn't have a typography reset out of the box
-// in this project, so each tag gets explicit utility classes for spacing,
-// font sizes, and code styling. Matches the dashboard's dark-on-dark palette.
+// Markdown renderer. h2 (and h3) headings get IDs so the TOC can
+// anchor-jump. Tailwind doesn't have a typography reset in this project,
+// so each tag gets explicit utility classes for spacing and font sizes.
 export function Markdown({ source }: { source: string }) {
   return (
     <div className="max-w-[80ch] text-sm leading-7 text-foreground">
@@ -17,14 +18,25 @@ export function Markdown({ source }: { source: string }) {
               {children}
             </h1>
           ),
-          h2: ({ children }) => (
-            <h2 className="mt-10 mb-3 border-b border-border pb-1 text-2xl font-semibold tracking-tight">
-              {children}
-            </h2>
-          ),
-          h3: ({ children }) => (
-            <h3 className="mt-8 mb-2 text-lg font-semibold">{children}</h3>
-          ),
+          h2: ({ children }) => {
+            const id = slugifyHeading(childrenToText(children));
+            return (
+              <h2
+                id={id}
+                className="mt-10 mb-3 scroll-mt-20 border-b border-border pb-1 text-2xl font-semibold tracking-tight"
+              >
+                {children}
+              </h2>
+            );
+          },
+          h3: ({ children }) => {
+            const id = slugifyHeading(childrenToText(children));
+            return (
+              <h3 id={id} className="mt-8 mb-2 scroll-mt-20 text-lg font-semibold">
+                {children}
+              </h3>
+            );
+          },
           h4: ({ children }) => (
             <h4 className="mt-6 mb-2 text-base font-semibold">{children}</h4>
           ),
@@ -84,4 +96,18 @@ export function Markdown({ source }: { source: string }) {
       </ReactMarkdown>
     </div>
   );
+}
+
+// Flatten react-markdown's children prop into plain text for slug
+// generation. Headings can contain inline code, em, links, etc.
+function childrenToText(children: React.ReactNode): string {
+  if (children == null || children === false) return "";
+  if (typeof children === "string" || typeof children === "number") return String(children);
+  if (Array.isArray(children)) return children.map(childrenToText).join("");
+  if (typeof children === "object" && "props" in children) {
+    return childrenToText(
+      (children as { props: { children?: React.ReactNode } }).props.children,
+    );
+  }
+  return "";
 }

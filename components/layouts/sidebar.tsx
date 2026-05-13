@@ -55,7 +55,11 @@ export function Sidebar({ user }: { user: { name: string; email: string; role: s
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
-      <div className="flex items-center gap-2 p-4">
+      <Link
+        href="/"
+        className="flex items-center gap-2 p-4 transition-opacity hover:opacity-80"
+        title="Back to dashboard"
+      >
         <Image
           src="/logo.png"
           alt="MCP Gateway"
@@ -65,7 +69,7 @@ export function Sidebar({ user }: { user: { name: string; email: string; role: s
           priority
         />
         <div className="text-sm font-semibold">MCP Gateway</div>
-      </div>
+      </Link>
 
       <nav className="flex-1 px-2 py-2 space-y-0.5">
         {NAV_ITEMS.map((item) => (
