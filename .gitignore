@@ -49,4 +49,7 @@ next-env.d.ts
 *.db
 *.db-journal
 
+# claude code local config (per-machine permission grants, worktree state)
+.claude/
+
 .vercel
