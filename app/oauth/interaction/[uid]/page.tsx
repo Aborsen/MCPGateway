@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { InteractionLoginForm } from "./login-form";
 import { ConsentForm } from "./consent-form";
+import { SwitchAccountLink } from "./switch-account";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,6 +119,12 @@ export default async function InteractionPage({ params }: Props) {
               You can revoke access any time from your Settings page.
             </p>
             <ConsentForm uid={uid} />
+            {user && (
+              <p className="border-t border-border pt-3 text-center text-xs text-muted-foreground">
+                Signed in as <span className="font-medium text-foreground">{user.email}</span>.{" "}
+                <SwitchAccountLink uid={uid} />
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
