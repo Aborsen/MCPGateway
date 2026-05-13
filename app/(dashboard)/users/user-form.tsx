@@ -134,8 +134,8 @@ export function UserFormDialog({
               <SelectContent>
                 <SelectItem value="USER">User</SelectItem>
                 <SelectItem value="ADMIN">Admin</SelectItem>
-                {viewerRole === "SUPER_ADMIN" && (
-                  <SelectItem value="SUPER_ADMIN">Super Admin</SelectItem>
+                {viewerRole === "OWNER" && (
+                  <SelectItem value="OWNER">Owner</SelectItem>
                 )}
               </SelectContent>
             </Select>

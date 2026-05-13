@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
-import { requireAdmin, requireSuperAdmin } from "@/lib/auth";
+import { requireAdmin, requireOwner } from "@/lib/auth";
 import { writeAdminEvent } from "@/lib/admin-events";
 
 const UpdateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
-  role: z.enum(["SUPER_ADMIN", "ADMIN", "USER"]).optional(),
+  role: z.enum(["OWNER", "ADMIN", "USER"]).optional(),
   password: z.string().min(6).optional(),
 });
 
@@ -29,17 +29,17 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   if (!before) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  // SUPER_ADMIN-only actions:
-  //   * Editing a user who currently has the SUPER_ADMIN role.
-  //   * Assigning the SUPER_ADMIN role.
-  //   * Demoting a SUPER_ADMIN to a lower role.
-  const touchingSuperAdmin =
-    before.role === "SUPER_ADMIN" ||
-    parsed.data.role === "SUPER_ADMIN" ||
-    (parsed.data.role && before.role === "SUPER_ADMIN");
-  if (touchingSuperAdmin && session.user.role !== "SUPER_ADMIN") {
+  // OWNER-only actions:
+  //   * Editing a user who currently has the OWNER role.
+  //   * Assigning the OWNER role.
+  //   * Demoting an OWNER to a lower role.
+  const touchingOwner =
+    before.role === "OWNER" ||
+    parsed.data.role === "OWNER" ||
+    (parsed.data.role && before.role === "OWNER");
+  if (touchingOwner && session.user.role !== "OWNER") {
     return NextResponse.json(
-      { error: "Only SUPER_ADMIN can modify a SUPER_ADMIN user or assign that role" },
+      { error: "Only an Owner can modify an Owner or assign that role" },
       { status: 403 },
     );
   }
@@ -92,7 +92,7 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
 }
 
 export async function DELETE(_request: Request, { params }: RouteCtx) {
-  const session = await requireSuperAdmin();
+  const session = await requireOwner();
   if (session instanceof NextResponse) return session;
   const { id } = await params;
   if (session.user.id === id) {

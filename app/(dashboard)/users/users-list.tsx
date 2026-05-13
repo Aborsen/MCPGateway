@@ -30,7 +30,7 @@ export function UsersList({
   const [editing, setEditing] = useState<User | null>(null);
   const [, startTransition] = useTransition();
 
-  const isSuperAdmin = viewerRole === "SUPER_ADMIN";
+  const isOwner = viewerRole === "OWNER";
 
   function onInvite() {
     setEditing(null);
@@ -79,9 +79,9 @@ export function UsersList({
             </thead>
             <tbody>
               {initial.map((u) => {
-                const isTargetSuperAdmin = u.role === "SUPER_ADMIN";
-                const canEdit = isSuperAdmin || !isTargetSuperAdmin;
-                const canDelete = isSuperAdmin && u.id !== viewerId;
+                const isTargetOwner = u.role === "OWNER";
+                const canEdit = isOwner || !isTargetOwner;
+                const canDelete = isOwner && u.id !== viewerId;
                 return (
                 <tr key={u.id} className="border-t border-border hover:bg-muted/30">
                   <td className="px-4 py-3">
@@ -93,7 +93,7 @@ export function UsersList({
                   <td className="px-4 py-3">
                     <Badge
                       variant={
-                        u.role === "SUPER_ADMIN"
+                        u.role === "OWNER"
                           ? "destructive"
                           : u.role === "ADMIN"
                             ? "default"

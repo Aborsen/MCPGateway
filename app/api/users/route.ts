@@ -9,7 +9,7 @@ const CreateSchema = z.object({
   email: z.string().email(),
   name: z.string().min(1).max(100),
   password: z.string().min(6),
-  role: z.enum(["SUPER_ADMIN", "ADMIN", "USER"]).default("USER"),
+  role: z.enum(["OWNER", "ADMIN", "USER"]).default("USER"),
 });
 
 export async function GET() {
@@ -34,10 +34,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 });
   }
   const data = parsed.data;
-  // Only SUPER_ADMIN can create another SUPER_ADMIN.
-  if (data.role === "SUPER_ADMIN" && session.user.role !== "SUPER_ADMIN") {
+  // Only Owners can create another Owner.
+  if (data.role === "OWNER" && session.user.role !== "OWNER") {
     return NextResponse.json(
-      { error: "Only SUPER_ADMIN can assign the SUPER_ADMIN role" },
+      { error: "Only an Owner can assign the Owner role" },
       { status: 403 },
     );
   }

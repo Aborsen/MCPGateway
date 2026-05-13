@@ -92,10 +92,10 @@ export async function requireAuth(): Promise<Session | NextResponse> {
   return session;
 }
 
-// Admin tier accepts both ADMIN and SUPER_ADMIN.
-const ADMIN_ROLES = new Set(["ADMIN", "SUPER_ADMIN"]);
+// Admin tier accepts both ADMIN and OWNER.
+const ADMIN_ROLES = new Set(["ADMIN", "OWNER"]);
 
-// Returns the session or a 401/403 response. Accepts ADMIN or SUPER_ADMIN.
+// Returns the session or a 401/403 response. Accepts ADMIN or OWNER.
 export async function requireAdmin(): Promise<Session | NextResponse> {
   const session = await auth();
   if (!session?.user) {
@@ -107,14 +107,14 @@ export async function requireAdmin(): Promise<Session | NextResponse> {
   return session;
 }
 
-// SUPER_ADMIN only. Used to gate destructive or escalation actions
-// (delete user, assign SUPER_ADMIN role).
-export async function requireSuperAdmin(): Promise<Session | NextResponse> {
+// OWNER only. Used to gate destructive or escalation actions
+// (delete user, assign OWNER role).
+export async function requireOwner(): Promise<Session | NextResponse> {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (session.user.role !== "SUPER_ADMIN") {
+  if (session.user.role !== "OWNER") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   return session;

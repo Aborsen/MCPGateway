@@ -77,7 +77,7 @@ async function main() {
       email: "admin@devart.com",
       name: "Admin",
       passwordHash: adminHash,
-      role: "SUPER_ADMIN",
+      role: "OWNER",
     },
   });
 

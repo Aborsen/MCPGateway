@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// One-shot: promote known accounts to SUPER_ADMIN. Hit it once after the
+// One-shot: promote known accounts to OWNER. Hit it once after the
 // role-system deploy; remove the file in a follow-up commit.
 //
 // Auth: Authorization: Bearer ${CRON_SECRET} (same as the other admin
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       }
       const updated = await prisma.user.update({
         where: { email },
-        data: { role: "SUPER_ADMIN" },
+        data: { role: "OWNER" },
         select: { role: true },
       });
       results.push({ email, before: before.role, after: updated.role, ok: true });
