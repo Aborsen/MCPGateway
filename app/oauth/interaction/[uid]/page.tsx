@@ -38,6 +38,38 @@ export default async function InteractionPage({ params }: Props) {
     );
   }
 
+  // Reconcile: Auth.js is authoritative. oidc-provider keeps its own session
+  // cookie which can drift from Auth.js (e.g. user signed in as admin earlier,
+  // then signed out and signed back in as someone else; OAuth still has the
+  // old admin session). If the two disagree, force the OAuth side to match.
+  const authJsSession = await auth();
+  const authJsUserId = (authJsSession?.user as { id?: string } | undefined)?.id ?? null;
+  const oauthAccountId = details.session?.accountId ?? null;
+
+  if (authJsUserId && oauthAccountId && authJsUserId !== oauthAccountId) {
+    // Override: re-do the login step with the current Auth.js identity.
+    const result = await provider.interactionResult(
+      req,
+      res,
+      { login: { accountId: authJsUserId } },
+      { mergeWithLastSubmission: false },
+    );
+    redirect(result);
+  }
+
+  if (!authJsUserId && oauthAccountId) {
+    // User signed out of Auth.js but oidc-provider still remembers them.
+    // We can't clean up the OAuth session from a server component (it lives
+    // in a different cookie that we'd need to write Set-Cookie for), so
+    // tell the user what to do.
+    return (
+      <ErrorCard
+        title="Sign in required"
+        message="You're signed out of AI Connectivity. Sign in first, then re-add the MCP server in Claude."
+      />
+    );
+  }
+
   const prompt = details.prompt.name;
 
   if (prompt === "login") {
