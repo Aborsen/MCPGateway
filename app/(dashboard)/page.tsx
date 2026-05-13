@@ -57,7 +57,7 @@ export default async function WorkspacePage() {
                 <>
                   <QueriesByDayChart data={m.byDay} />
                   <div className="mt-2 flex items-center justify-center gap-4 text-xs text-muted-foreground">
-                    <Legend swatch="bg-primary" label="Successful" />
+                    <Legend swatch="bg-success" label="Successful" />
                     <Legend swatch="bg-destructive" label="Errors" />
                   </div>
                 </>
@@ -88,7 +88,7 @@ export default async function WorkspacePage() {
                       <div className="flex items-center gap-2">
                         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                           <div
-                            className="h-full bg-primary"
+                            className="h-full bg-success"
                             style={{ width: `${(c.successRate * 100).toFixed(1)}%` }}
                           />
                         </div>

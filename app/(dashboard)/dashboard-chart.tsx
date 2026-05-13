@@ -82,7 +82,7 @@ export function QueriesByDayChart({ data }: { data: Day[] }) {
                 y={okY}
                 width={barW}
                 height={okH}
-                className="fill-primary"
+                className="fill-success"
                 rx={1}
               >
                 <title>{`${d.date}: ${d.ok} ok`}</title>

@@ -75,7 +75,7 @@ export function Sidebar({ user }: { user: { name: string; email: string; role: s
           </div>
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">{user.name}</div>
-            <div className="truncate text-xs text-sidebar-foreground/60">{user.role}</div>
+            <div className="truncate text-xs text-sidebar-foreground/60">{user.email}</div>
           </div>
         </Link>
       </div>

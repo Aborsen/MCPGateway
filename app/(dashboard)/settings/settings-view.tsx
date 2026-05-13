@@ -8,14 +8,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 type Props = {
   initialName: string;
   email: string;
+  role: string;
 };
 
-export function SettingsView({ initialName, email }: Props) {
+export function SettingsView({ initialName, email, role }: Props) {
   const [name, setName] = useState(initialName);
   const [savingName, setSavingName] = useState(false);
   const [nameMsg, setNameMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -71,6 +73,12 @@ export function SettingsView({ initialName, email }: Props) {
               <div className="space-y-2">
                 <Label htmlFor="settings-email">Email</Label>
                 <Input id="settings-email" value={email} disabled />
+              </div>
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <div>
+                  <Badge variant={role === "ADMIN" ? "default" : "secondary"}>{role}</Badge>
+                </div>
               </div>
               {nameMsg && (
                 <p className={cn("text-sm", nameMsg.kind === "ok" ? "text-success" : "text-destructive")}>
