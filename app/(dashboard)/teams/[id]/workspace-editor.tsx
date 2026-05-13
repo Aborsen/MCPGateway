@@ -2,11 +2,10 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Save, X } from "lucide-react";
+import { Save, X, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +42,7 @@ export function WorkspaceEditor({
   const [users, setUsers] = useState(workspace.users);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
   const [, startTransition] = useTransition();
 
   function toggleDataSource(dsId: string) {
@@ -93,6 +93,7 @@ export function WorkspaceEditor({
   async function onSave() {
     setPending(true);
     setError(null);
+    setSaved(false);
     try {
       const res = await fetch(`/api/workspaces/${workspace.id}`, {
         method: "PATCH",
@@ -108,6 +109,8 @@ export function WorkspaceEditor({
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Failed to save");
       }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
       startTransition(() => router.refresh());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed");
@@ -122,18 +125,24 @@ export function WorkspaceEditor({
         <CardHeader>
           <CardTitle>Details</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2">
+        <CardContent className="grid items-start gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="w-name">Name</Label>
-            <Input id="w-name" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input
+              id="w-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="h-9"
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="w-desc">Description</Label>
-            <Textarea
+            <Input
               id="w-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              rows={2}
+              placeholder="Optional"
+              className="h-9"
             />
           </div>
         </CardContent>
@@ -147,7 +156,10 @@ export function WorkspaceEditor({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
+          <div className="max-h-[420px] space-y-3 overflow-y-auto pr-2">
+            {allDataSources.length === 0 && (
+              <p className="py-6 text-center text-sm text-muted-foreground">No connections yet.</p>
+            )}
             {allDataSources.map((ds) => {
               const selected = dataSources.find((d) => d.dataSourceId === ds.id);
               const tablesStr = selected?.allowedTables ? selected.allowedTables.join(", ") : "";
@@ -200,7 +212,10 @@ export function WorkspaceEditor({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
+          <div className="max-h-[420px] space-y-3 overflow-y-auto pr-2">
+            {allUsers.length === 0 && (
+              <p className="py-6 text-center text-sm text-muted-foreground">No users yet.</p>
+            )}
             {allUsers.map((u) => {
               const selected = users.find((x) => x.userId === u.id);
               return (
@@ -237,14 +252,19 @@ export function WorkspaceEditor({
         </CardContent>
       </Card>
 
-      {error && (
-        <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-          <X className="h-4 w-4" />
-          {error}
-        </div>
-      )}
-
-      <div className="flex justify-end">
+      <div className="sticky bottom-0 -mx-6 -mb-6 flex items-center justify-end gap-3 border-t border-border bg-background/95 px-6 py-3 backdrop-blur">
+        {error && (
+          <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-sm text-destructive">
+            <X className="h-4 w-4" />
+            <span>{error}</span>
+          </div>
+        )}
+        {saved && !error && (
+          <div className="flex items-center gap-2 rounded-md border border-success/40 bg-success/10 px-3 py-1.5 text-sm text-success">
+            <Check className="h-4 w-4" />
+            <span>Changes saved.</span>
+          </div>
+        )}
         <Button onClick={onSave} disabled={pending}>
           <Save className="h-4 w-4" />
           {pending ? "Saving…" : "Save changes"}
