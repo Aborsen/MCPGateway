@@ -210,14 +210,19 @@ export function TablesViewer({
                           onClick={() => toggle(t)}
                           title={t}
                           className={
-                            "flex items-center gap-2 overflow-hidden rounded px-2 py-1 text-left font-mono text-xs transition-colors " +
-                            (isSelected
-                              ? "bg-primary/15 text-foreground ring-1 ring-primary/40"
-                              : "bg-muted hover:bg-muted/70")
+                            "flex items-center gap-2 overflow-hidden rounded px-2 py-1.5 text-left font-mono text-xs transition-colors hover:bg-muted/60 " +
+                            (isSelected ? "bg-primary/10" : "")
                           }
                         >
-                          <span className="flex h-3 w-3 shrink-0 items-center justify-center">
-                            {isSelected ? <Check className="h-3 w-3 text-primary" /> : null}
+                          <span
+                            className={
+                              "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors " +
+                              (isSelected
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-muted-foreground/40 bg-background")
+                            }
+                          >
+                            {isSelected && <Check className="h-3 w-3" strokeWidth={3} />}
                           </span>
                           <span className="truncate">{t}</span>
                         </button>
