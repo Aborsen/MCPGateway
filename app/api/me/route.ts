@@ -10,7 +10,8 @@ const UpdateSchema = z.object({
 
 export async function PATCH(request: Request) {
   const session = await requireAuth();
-  const userId = (session.user as { id: string }).id;
+  if (session instanceof NextResponse) return session;
+  const userId = session.user.id;
   const body = await request.json();
   const parsed = UpdateSchema.safeParse(body);
   if (!parsed.success) {

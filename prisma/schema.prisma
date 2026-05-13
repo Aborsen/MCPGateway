@@ -155,4 +155,7 @@ model AuditLog {
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([createdAt])
+  @@index([method, createdAt])
+  @@index([dataSourceId, createdAt])
+  @@index([status, createdAt])
 }

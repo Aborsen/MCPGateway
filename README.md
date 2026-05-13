@@ -65,22 +65,31 @@ The repo is set up to deploy cleanly. After the first Vercel deploy:
    | `AUTH_SECRET` | `openssl rand -base64 32` |
    | `AUTH_TRUST_HOST` | `true` |
    | `MCP_CONFIG_KEY` | `openssl rand -base64 32` |
+   | `OIDC_ISSUER` | Your prod URL, no trailing slash (e.g. `https://app.example.com`) |
+   | `OIDC_COOKIE_KEY` | `openssl rand -hex 32` |
+   | `OIDC_JWKS` | Output of `npx tsx scripts/generate-jwks.ts`, as a single-line string |
+   | `CRON_SECRET` | `openssl rand -hex 32` — used by the daily audit-prune cron |
+   | `AUDIT_RETENTION_DAYS` | (Optional) days of audit-log rows to keep; defaults to `90` |
 
-3. **Bootstrap the schema and seed data** — run locally against the prod URL once:
+   > **Vercel preview gotcha:** `OIDC_ISSUER` must match the deploy origin exactly. Preview deployments have hostnames that differ from the prod alias, so the OAuth flow only works on the prod alias by default. Either set `OIDC_ISSUER` per-environment or restrict OAuth testing to the prod alias.
+
+3. **Bootstrap the schema and seed data** — run locally against the prod URL once. The seed script refuses to run with `NODE_ENV=production` unless you pass `--allow-prod` (it deletes every row in every table before re-inserting demo data, so the guard is intentional):
    ```bash
-   DATABASE_URL="<prod url>" npm run db:push
-   DATABASE_URL="<prod url>" npm run db:seed
+   DATABASE_URL="<prod url>" npm run db:migrate
+   DATABASE_URL="<prod url>" npx tsx prisma/seed.ts --allow-prod
    ```
 4. **Redeploy** the latest commit so the env vars take effect.
 5. (Optional) Enable **Fluid Compute** in Vercel project settings so the MCP route can use the full 60s `maxDuration` (already configured in `vercel.json`).
 
 ## Architecture
 
-- **`app/api/mcp/[token]/route.ts`** — JSON-RPC 2.0 over HTTP. Handles `initialize`, `tools/list`, `tools/call`, `ping`. Tools are namespaced as `<slug>__<tool>` (e.g. `hubspot__list_contacts`).
-- **`lib/mcp/upstream-client.ts`** — Calls upstream MCP servers. If the upstream URL is `mcp.example.com/*` (the seeded demo URL), uses a built-in mock provider so the demo works offline.
-- **`lib/mcp/permission-filter.ts`** — Rolls up workspace permissions per user, applies tool-level `READ`/`WRITE`/`DELETE` checks, and inspects `table_name` / `module` / `object_name` args against workspace allow-lists. Blocks raw-SQL tools (`query`, `run_soql`, `execute_ddl`, `run_apex`) when table restrictions are in effect.
-- **`lib/mcp/audit.ts`** — Writes audit rows out-of-band via `next/server`'s `after()` so they never block the response.
-- **`lib/crypto.ts`** — libsodium-sealed-box encryption of upstream credentials (keyed by `MCP_CONFIG_KEY`) + SHA-256 hashing of MCP tokens (only hashes stored).
+- **`app/api/mcp/u/[uid]/route.ts`** — JSON-RPC 2.0 over HTTP. Handles `initialize`, `tools/list`, `tools/call`, `ping`, and the `notifications/*` lifecycle. Tools are namespaced as `<slug>__<tool>` (e.g. `hubspot__list_contacts`). The `uid` URL segment is a routing handle; the OAuth-authenticated account is authoritative for permissions.
+- **`lib/oidc/`** — OAuth 2.1 / OIDC provider (`oidc-provider`) for the MCP endpoint. Claude Code does PKCE, receives an opaque access token, and sends it as `Authorization: Bearer …` on every JSON-RPC request. Adapter is Prisma-backed (`OidcModel` table); JWKs come from the `OIDC_JWKS` env var.
+- **`lib/mcp/upstream-client.ts`** — Calls upstream MCP servers. If the upstream URL is `mcp.example.com/*` or `mock:*` (the seeded demo URLs), uses a built-in mock provider so the demo works offline.
+- **`lib/mcp/permission-filter.ts`** — Rolls up workspace + direct-grant permissions per user, applies tool-level `select`/`insert`/`update`/`delete`/`execute` checks, and inspects `table_name` / `module` / `object_name` args against workspace allow-lists. Blocks raw-SQL tools (`query`, `run_soql`, `execute_ddl`, `run_apex`) when table restrictions are in effect. Also post-filters list-tool responses so restricted tables don't leak in `tools/call` results.
+- **`lib/mcp/audit.ts`** — Writes audit rows out-of-band via `next/server`'s `after()` so they never block the response. Bodies are size-capped via `truncateJson()` in `lib/json.ts`.
+- **`lib/auth.ts`** — Auth.js v5 + Credentials provider + JWT sessions, used by the admin dashboard (not the MCP endpoint). `requireAuth()` / `requireAdmin()` return either the session or a `NextResponse` (401/403) — callers must check the return type before using it.
+- **`lib/crypto.ts`** — libsodium secretbox encryption of upstream connector credentials, keyed by `MCP_CONFIG_KEY` (required in production).
 
 ## Tech stack
 

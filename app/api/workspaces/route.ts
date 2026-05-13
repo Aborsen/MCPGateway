@@ -9,7 +9,8 @@ const CreateSchema = z.object({
 });
 
 export async function GET() {
-  await requireAdmin();
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
   const workspaces = await prisma.workspace.findMany({
     where: { deletedAt: null },
     orderBy: { createdAt: "asc" },
@@ -21,7 +22,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  await requireAdmin();
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
   const body = await request.json();
   const parsed = CreateSchema.safeParse(body);
   if (!parsed.success) {

@@ -10,7 +10,19 @@ async function ensureReady() {
 }
 
 function getKey(): Uint8Array {
-  const raw = process.env.MCP_CONFIG_KEY ?? "dev-key-please-replace-in-production-now";
+  const raw = process.env.MCP_CONFIG_KEY;
+  if (!raw) {
+    // Refuse to silently encrypt with a public constant in production. In dev
+    // we fall back to a fixed string so `npm run dev` works without setup.
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "MCP_CONFIG_KEY is not set. Generate one with `openssl rand -base64 32` and set it as an env var.",
+      );
+    }
+    const dev = "dev-key-please-replace-in-production-now";
+    const hash = createHash("sha256").update(dev).digest();
+    return new Uint8Array(hash);
+  }
   const hash = createHash("sha256").update(raw).digest();
   return new Uint8Array(hash);
 }

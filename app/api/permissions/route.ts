@@ -4,7 +4,8 @@ import { requireAdmin } from "@/lib/auth";
 import { getUserAccess } from "@/lib/mcp/permission-filter";
 
 export async function GET() {
-  await requireAdmin();
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
   const [users, dataSources] = await Promise.all([
     prisma.user.findMany({
       where: { deletedAt: null },

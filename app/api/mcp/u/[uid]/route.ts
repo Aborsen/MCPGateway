@@ -2,6 +2,7 @@ import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
 import { getProvider, getMcpResourceUrl } from "@/lib/oidc/provider";
 import { writeAudit } from "@/lib/mcp/audit";
+import { checkRateLimit } from "@/lib/rate-limit";
 import {
   getUserAccess,
   getToolLevel,
@@ -111,6 +112,22 @@ export async function POST(request: Request, { params }: RouteCtx) {
     console.warn(`[mcp] uid in URL (${uid}) doesn't match authenticated user's mcpUid (${user.mcpUid}); using authenticated user.`);
   }
   const userId = user.id;
+
+  // --- Rate limit (per-account, in-memory). Single-instance scope; swap to
+  // Redis if/when this is deployed horizontally. 60 req/min is comfortably
+  // above well-behaved Claude clients but cuts off a runaway loop.
+  const rl = checkRateLimit(`mcp:${userId}`, 60, 60_000);
+  if (!rl.ok) {
+    const err = jsonRpcError(
+      null,
+      ERROR_CODES.INTERNAL_ERROR,
+      `Rate limit exceeded. Retry after ${rl.retryAfterSec}s.`,
+    );
+    return NextResponse.json(err, {
+      status: 429,
+      headers: { "Retry-After": String(rl.retryAfterSec) },
+    });
+  }
 
   // --- JSON-RPC body ---
   let body: JsonRpcRequest;
@@ -330,6 +347,25 @@ export async function GET() {
 }
 
 async function aggregateTools(access: UserAccess[]) {
+  // Batch the ToolPermission lookup across all the user's connectors. Previously
+  // this ran inside the per-connector map (N round-trips for N connectors).
+  const dataSourceIds = access.map((a) => a.dataSourceId);
+  const allLevels =
+    dataSourceIds.length === 0
+      ? []
+      : await prisma.toolPermission.findMany({
+          where: { dataSourceId: { in: dataSourceIds } },
+        });
+  const levelsByDs = new Map<string, Map<string, string>>();
+  for (const tp of allLevels) {
+    let inner = levelsByDs.get(tp.dataSourceId);
+    if (!inner) {
+      inner = new Map();
+      levelsByDs.set(tp.dataSourceId, inner);
+    }
+    inner.set(tp.toolName, tp.level.toLowerCase());
+  }
+
   const all = await Promise.all(
     access.map(async (a) => {
       const upstreamTools = await listToolsFromUpstream({
@@ -346,10 +382,7 @@ async function aggregateTools(access: UserAccess[]) {
         return [];
       });
 
-      const levelMap = await prisma.toolPermission.findMany({
-        where: { dataSourceId: a.dataSourceId },
-      });
-      const levels = new Map(levelMap.map((tp) => [tp.toolName, tp.level.toLowerCase()]));
+      const levels = levelsByDs.get(a.dataSourceId) ?? new Map<string, string>();
 
       return upstreamTools
         .filter((t) => {

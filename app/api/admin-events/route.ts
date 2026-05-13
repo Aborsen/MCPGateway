@@ -3,7 +3,8 @@ import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 
 export async function GET(request: Request) {
-  await requireAdmin();
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
   const { searchParams } = new URL(request.url);
   const days = Math.max(1, Math.min(90, Number(searchParams.get("days")) || 7));
   const eventType = searchParams.get("eventType");

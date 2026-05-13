@@ -13,6 +13,7 @@ type RouteCtx = { params: Promise<{ id: string; dsId: string }> };
 
 export async function PUT(request: Request, { params }: RouteCtx) {
   const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
   const { id: userId, dsId: dataSourceId } = await params;
   const body = await request.json();
   const parsed = BodySchema.safeParse(body);
@@ -86,6 +87,7 @@ export async function PUT(request: Request, { params }: RouteCtx) {
 
 export async function DELETE(_request: Request, { params }: RouteCtx) {
   const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
   const { id: userId, dsId: dataSourceId } = await params;
   const ds = await prisma.dataSource.findUnique({ where: { id: dataSourceId } });
   const user = await prisma.user.findUnique({ where: { id: userId } });

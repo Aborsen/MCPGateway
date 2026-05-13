@@ -27,7 +27,8 @@ const UpdateSchema = z.object({
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: RouteCtx) {
-  await requireAdmin();
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   const body = await request.json();
   const parsed = UpdateSchema.safeParse(body);
@@ -72,7 +73,8 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
 }
 
 export async function DELETE(_request: Request, { params }: RouteCtx) {
-  await requireAdmin();
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   await prisma.dataSource.delete({ where: { id } });
   return NextResponse.json({ ok: true });

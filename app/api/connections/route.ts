@@ -54,7 +54,8 @@ async function uniqueSlug(base: string): Promise<string> {
 }
 
 export async function GET() {
-  await requireAdmin();
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
   const sources = await prisma.dataSource.findMany({
     orderBy: { createdAt: "asc" },
     include: {
@@ -82,7 +83,8 @@ function buildEncryptedConfig(input: {
 }
 
 export async function POST(request: Request) {
-  await requireAdmin();
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
   const body = await request.json();
   const parsed = CreateSchema.safeParse(body);
   if (!parsed.success) {

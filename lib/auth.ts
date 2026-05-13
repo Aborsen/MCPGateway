@@ -1,4 +1,6 @@
 import NextAuth from "next-auth";
+import type { Session } from "next-auth";
+import { NextResponse } from "next/server";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
@@ -77,18 +79,27 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
 });
 
-export async function requireAuth() {
+// Returns the session or a 401 response. Callers in API routes MUST do:
+//   const session = await requireAuth();
+//   if (session instanceof NextResponse) return session;
+// TypeScript will then narrow `session` to `Session` (with the typed user
+// from `types/next-auth.d.ts`).
+export async function requireAuth(): Promise<Session | NextResponse> {
   const session = await auth();
   if (!session?.user) {
-    throw new Error("UNAUTHORIZED");
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   return session;
 }
 
-export async function requireAdmin() {
-  const session = await requireAuth();
-  if ((session.user as { role?: string }).role !== "ADMIN") {
-    throw new Error("FORBIDDEN");
+// Returns the session or a 401/403 response.
+export async function requireAdmin(): Promise<Session | NextResponse> {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   return session;
 }

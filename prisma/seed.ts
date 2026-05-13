@@ -2,6 +2,11 @@ import bcrypt from "bcryptjs";
 import { PrismaClient } from "../generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
+if (process.env.NODE_ENV === "production" && !process.argv.includes("--allow-prod")) {
+  throw new Error(
+    "Seed refused: NODE_ENV=production. This script deletes every row in every table. Pass --allow-prod if you really mean it.",
+  );
+}
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL not set. Point it at your Postgres before running the seed.");
 }

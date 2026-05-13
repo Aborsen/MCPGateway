@@ -13,7 +13,8 @@ const CreateSchema = z.object({
 });
 
 export async function GET() {
-  await requireAdmin();
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
   const users = await prisma.user.findMany({
     where: { deletedAt: null },
     orderBy: { createdAt: "asc" },
@@ -26,6 +27,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
   const body = await request.json();
   const parsed = CreateSchema.safeParse(body);
   if (!parsed.success) {

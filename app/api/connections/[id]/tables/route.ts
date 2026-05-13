@@ -31,7 +31,8 @@ const cache = new Map<string, CacheEntry>();
 const TTL_MS = 60_000;
 
 export async function GET(request: Request, { params }: RouteCtx) {
-  await requireAdmin();
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   const refresh = new URL(request.url).searchParams.get("refresh") === "1";
 

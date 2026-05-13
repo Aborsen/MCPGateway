@@ -29,7 +29,8 @@ function generateUid(): string {
 }
 
 export async function GET(request: Request, { params }: RouteCtx) {
-  await requireAdmin();
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   const user = await prisma.user.findUnique({
     where: { id },
@@ -46,7 +47,8 @@ export async function GET(request: Request, { params }: RouteCtx) {
 
 // POST = generate (if absent) or rotate (if already set).
 export async function POST(request: Request, { params }: RouteCtx) {
-  await requireAdmin();
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   const mcpUid = generateUid();
   await prisma.user.update({

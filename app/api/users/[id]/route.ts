@@ -15,6 +15,7 @@ type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: RouteCtx) {
   const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
   const { id } = await params;
   const body = await request.json();
   const parsed = UpdateSchema.safeParse(body);
@@ -78,6 +79,7 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
 
 export async function DELETE(_request: Request, { params }: RouteCtx) {
   const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
   const { id } = await params;
   const before = await prisma.user.findUnique({
     where: { id },

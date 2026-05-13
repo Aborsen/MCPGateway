@@ -7,7 +7,8 @@ import { classifyToolByName } from "@/lib/mcp/permission-filter";
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, { params }: RouteCtx) {
-  await requireAdmin();
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   const ds = await prisma.dataSource.findUnique({ where: { id } });
   if (!ds) return NextResponse.json({ error: "Not found" }, { status: 404 });

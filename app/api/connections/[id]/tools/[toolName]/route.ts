@@ -12,6 +12,7 @@ type RouteCtx = { params: Promise<{ id: string; toolName: string }> };
 
 export async function PATCH(request: Request, { params }: RouteCtx) {
   const session = await requireAdmin();
+  if (session instanceof NextResponse) return session;
   const { id: dataSourceId, toolName: rawToolName } = await params;
   const toolName = decodeURIComponent(rawToolName);
   const body = await request.json();
