@@ -112,9 +112,17 @@ function extractText(result: McpToolResult): string {
     .trim();
 }
 
-// Best-effort: try common shapes the upstream might return.
+const NAME_FIELDS = ["name", "Name", "TableName", "table_name", "object_name", "ObjectName", "module", "fullName"];
+
+// Best-effort: try JSON shapes first, then CSV. Skyvia's `Objects` tool
+// returns CSV like `fullName,name,queryable\nIssues,Issues,true\n...` —
+// not JSON.
 function parseTableNames(raw: string): string[] | null {
   if (!raw) return null;
+  return parseAsJson(raw) ?? parseAsCsv(raw);
+}
+
+function parseAsJson(raw: string): string[] | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -129,12 +137,11 @@ function parseTableNames(raw: string): string[] | null {
 
   // Shape: [{ name: "..." }, ...]
   if (Array.isArray(parsed)) {
-    const fields = ["name", "Name", "TableName", "table_name", "object_name", "ObjectName", "module"];
     const out: string[] = [];
     for (const item of parsed) {
       if (item && typeof item === "object") {
         const obj = item as Record<string, unknown>;
-        for (const f of fields) {
+        for (const f of NAME_FIELDS) {
           if (typeof obj[f] === "string") {
             out.push(obj[f] as string);
             break;
@@ -151,10 +158,42 @@ function parseTableNames(raw: string): string[] | null {
     for (const key of ["objects", "tables", "results", "data", "items", "rows"]) {
       const inner = o[key];
       if (Array.isArray(inner)) {
-        return parseTableNames(JSON.stringify(inner));
+        return parseAsJson(JSON.stringify(inner));
       }
     }
   }
 
   return null;
+}
+
+// CSV: first line is headers, find the column that matches one of NAME_FIELDS,
+// extract that column from each row. If a `queryable` column exists, drop
+// rows where it's not "true" (Skyvia marks read-only/non-queryable objects).
+function parseAsCsv(raw: string): string[] | null {
+  const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length < 2) return null;
+  const headers = splitCsvLine(lines[0]);
+  if (headers.length < 2) return null;
+  const nameIdx = headers.findIndex((h) => NAME_FIELDS.includes(h.trim()));
+  if (nameIdx < 0) return null;
+  const queryableIdx = headers.findIndex((h) => h.trim().toLowerCase() === "queryable");
+
+  const out: string[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cells = splitCsvLine(lines[i]);
+    if (cells.length <= nameIdx) continue;
+    if (queryableIdx >= 0 && cells[queryableIdx]?.trim().toLowerCase() !== "true") continue;
+    const name = cells[nameIdx]?.trim();
+    if (name) out.push(name);
+  }
+  if (out.length === 0) return null;
+  // De-dupe while preserving order.
+  const seen = new Set<string>();
+  return out.filter((n) => (seen.has(n) ? false : (seen.add(n), true)));
+}
+
+function splitCsvLine(line: string): string[] {
+  // Minimal CSV split. Doesn't handle embedded quotes/commas — fine for the
+  // Skyvia outputs we've seen which are plain `a,b,c`.
+  return line.split(",");
 }

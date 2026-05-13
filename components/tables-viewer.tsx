@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Copy, RefreshCcw, Check, Table2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Copy, RefreshCcw, Check, Table2, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -20,8 +21,10 @@ type TablesResponse = {
 };
 
 // Click-to-open viewer for the live list of tables a connection exposes.
-// Calls /api/connections/<id>/tables which probes the upstream MCP server
-// for a known table-listing tool and parses the response.
+// Server hits /api/connections/<id>/tables which probes the upstream and
+// returns a parsed name list. Here we add a search filter and per-table
+// click-to-select so the admin can quickly build a "Allowed tables"
+// comma-separated list from hundreds of entries.
 
 export function TablesViewer({
   dataSourceId,
@@ -33,7 +36,9 @@ export function TablesViewer({
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<TablesResponse | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [copied, setCopied] = useState<"all" | "selected" | null>(null);
 
   async function load(refresh = false) {
     setLoading(true);
@@ -58,11 +63,35 @@ export function TablesViewer({
     if (open && !data && !loading) void load(false);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function copyAll() {
-    if (!data?.tables) return;
-    await navigator.clipboard.writeText(data.tables.join(", "));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+  // Reset selection/search when the dialog closes so each open is fresh.
+  useEffect(() => {
+    if (!open) {
+      setSearch("");
+      setSelected(new Set());
+    }
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    const all = data?.tables ?? [];
+    const q = search.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter((t) => t.toLowerCase().includes(q));
+  }, [data?.tables, search]);
+
+  function toggle(name: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
+  async function copy(list: string[], which: "all" | "selected") {
+    if (list.length === 0) return;
+    await navigator.clipboard.writeText(list.join(", "));
+    setCopied(which);
+    setTimeout(() => setCopied(null), 1500);
   }
 
   return (
@@ -89,34 +118,88 @@ export function TablesViewer({
           )}
 
           {!loading && data?.error && (
-            <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
-              <p className="text-destructive">{data.error}</p>
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+              {data.error}
             </div>
           )}
 
           {!loading && data?.tables && data.tables.length > 0 && (
             <>
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">
-                  {data.tables.length} table{data.tables.length === 1 ? "" : "s"}
-                </p>
-                <Button variant="outline" size="sm" onClick={copyAll}>
-                  {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                  {copied ? "Copied" : "Copy all"}
-                </Button>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={`Search ${data.tables.length} tables…`}
+                  className="h-9 pl-8 pr-8 font-mono text-xs"
+                  autoFocus
+                />
+                {search && (
+                  <button
+                    onClick={() => setSearch("")}
+                    className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
-              <div className="max-h-80 overflow-y-auto rounded-md border border-border">
-                <div className="grid grid-cols-2 gap-x-2 gap-y-1 p-2 text-sm">
-                  {data.tables.map((t) => (
-                    <code
-                      key={t}
-                      className="overflow-hidden truncate rounded bg-muted px-2 py-1 font-mono text-xs"
-                      title={t}
+
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">
+                  {filtered.length} of {data.tables.length}
+                  {selected.size > 0 && (
+                    <span className="ml-2 text-primary">· {selected.size} selected</span>
+                  )}
+                </span>
+                <div className="flex items-center gap-2">
+                  {selected.size > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => copy(Array.from(selected), "selected")}
                     >
-                      {t}
-                    </code>
-                  ))}
+                      {copied === "selected" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                      Copy selected ({selected.size})
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" onClick={() => copy(data.tables ?? [], "all")}>
+                    {copied === "all" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    Copy all
+                  </Button>
                 </div>
+              </div>
+
+              <div className="max-h-80 overflow-y-auto rounded-md border border-border">
+                {filtered.length === 0 ? (
+                  <p className="p-4 text-center text-xs text-muted-foreground">
+                    No tables match &quot;{search}&quot;.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-1 p-2">
+                    {filtered.map((t) => {
+                      const isSelected = selected.has(t);
+                      return (
+                        <button
+                          key={t}
+                          onClick={() => toggle(t)}
+                          title={t}
+                          className={
+                            "flex items-center gap-2 overflow-hidden rounded px-2 py-1 text-left font-mono text-xs transition-colors " +
+                            (isSelected
+                              ? "bg-primary/15 text-foreground ring-1 ring-primary/40"
+                              : "bg-muted hover:bg-muted/70")
+                          }
+                        >
+                          <span className="flex h-3 w-3 shrink-0 items-center justify-center">
+                            {isSelected ? <Check className="h-3 w-3 text-primary" /> : null}
+                          </span>
+                          <span className="truncate">{t}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </>
           )}
