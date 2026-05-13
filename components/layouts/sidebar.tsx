@@ -10,6 +10,7 @@ import {
   FileText,
   Users,
   FolderTree,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/workspaces", label: "Workspaces", icon: FolderTree },
   { href: "/permissions", label: "Permissions", icon: ShieldCheck },
   { href: "/audit", label: "Audit", icon: FileText },
+  { href: "/specs", label: "Specs", icon: BookOpen },
 ];
 
 function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
