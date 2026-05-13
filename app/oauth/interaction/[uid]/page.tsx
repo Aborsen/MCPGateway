@@ -59,25 +59,32 @@ export default async function InteractionPage({ params }: Props) {
 
   if (!authJsUserId && oauthAccountId) {
     // User signed out of Auth.js but oidc-provider still remembers them.
-    // We can't clean up the OAuth session from a server component (it lives
-    // in a different cookie that we'd need to write Set-Cookie for), so
-    // tell the user what to do.
+    // Render the inline sign-in form right here. Once they submit, the
+    // page reloads with both sessions present; the mismatch branch above
+    // then overrides oidc-provider with the new identity.
     return (
-      <ErrorCard
-        title="Sign in required"
-        message="You're signed out of AI Connectivity. Sign in first, then re-add the MCP server in Claude."
-      />
+      <div className="mx-auto max-w-md p-8">
+        <Card>
+          <CardHeader>
+            <CardTitle>Sign in to continue</CardTitle>
+            <CardDescription>
+              You&apos;re signed out of AI Connectivity. Sign in to authorize Claude.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <InteractionLoginForm uid={uid} />
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
   const prompt = details.prompt.name;
 
   if (prompt === "login") {
-    const session = await auth();
-    const signedInUserId = (session?.user as { id?: string } | undefined)?.id;
-    if (signedInUserId) {
+    if (authJsUserId) {
       const result = await provider.interactionResult(req, res, {
-        login: { accountId: signedInUserId },
+        login: { accountId: authJsUserId },
       }, { mergeWithLastSubmission: false });
       redirect(result);
     }

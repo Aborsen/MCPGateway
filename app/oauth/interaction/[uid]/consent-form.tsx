@@ -1,56 +1,25 @@
-"use client";
-
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
-// Allow / Deny buttons for the OAuth consent screen. The actual Grant
-// creation happens server-side in /oauth/interaction/[uid]/confirm.
+// Native form POST — the browser handles the OAuth redirect chain natively
+// across origins (back to claude.ai's callback). Using fetch() here would
+// hit a CORS gate when the chain crosses origins and throw "Failed to fetch".
+//
+// Allow form posts to /oauth/interaction/[uid]/confirm
+// Deny  form posts to /oauth/interaction/[uid]/abort
 
 export function ConsentForm({ uid }: { uid: string }) {
-  const [pending, setPending] = useState<"allow" | "deny" | null>(null);
-
-  async function submit(action: "allow" | "deny") {
-    setPending(action);
-    try {
-      const url = action === "allow"
-        ? `/oauth/interaction/${uid}/confirm`
-        : `/oauth/interaction/${uid}/abort`;
-      const res = await fetch(url, { method: "POST", redirect: "follow" });
-      // Server replies with a redirect to /oauth/authorize/<jti>; the
-      // browser will follow it automatically when we navigate to res.url.
-      if (res.redirected) {
-        window.location.href = res.url;
-      } else if (res.ok) {
-        window.location.reload();
-      } else {
-        alert("Authorization failed: " + res.status);
-        setPending(null);
-      }
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed");
-      setPending(null);
-    }
-  }
-
   return (
     <div className="flex gap-2">
-      <Button
-        type="button"
-        onClick={() => submit("allow")}
-        disabled={pending !== null}
-        className="flex-1"
-      >
-        {pending === "allow" ? "Allowing…" : "Allow"}
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => submit("deny")}
-        disabled={pending !== null}
-        className="flex-1"
-      >
-        {pending === "deny" ? "Denying…" : "Deny"}
-      </Button>
+      <form action={`/oauth/interaction/${uid}/confirm`} method="POST" className="flex-1">
+        <Button type="submit" className="w-full">
+          Allow
+        </Button>
+      </form>
+      <form action={`/oauth/interaction/${uid}/abort`} method="POST" className="flex-1">
+        <Button type="submit" variant="outline" className="w-full">
+          Deny
+        </Button>
+      </form>
     </div>
   );
 }
