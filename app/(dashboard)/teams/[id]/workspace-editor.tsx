@@ -1,14 +1,20 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Save, X, Check } from "lucide-react";
+import { Save, X, Check, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { TablesViewer } from "@/components/tables-viewer";
 
 type DataSourceOption = { id: string; name: string; type: string };
@@ -44,6 +50,44 @@ export function WorkspaceEditor({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [, startTransition] = useTransition();
+
+  // Search + filter state for the two big lists.
+  const [dsSearch, setDsSearch] = useState("");
+  const [dsTypeFilter, setDsTypeFilter] = useState<string>("all");
+  const [dsSelectedOnly, setDsSelectedOnly] = useState(false);
+  const [userSearch, setUserSearch] = useState("");
+  const [userSelectedOnly, setUserSelectedOnly] = useState(false);
+
+  const dsTypes = useMemo(() => {
+    const set = new Set<string>();
+    for (const d of allDataSources) if (d.type) set.add(d.type);
+    return Array.from(set).sort();
+  }, [allDataSources]);
+
+  const selectedDsIds = useMemo(
+    () => new Set(dataSources.map((d) => d.dataSourceId)),
+    [dataSources],
+  );
+  const selectedUserIds = useMemo(() => new Set(users.map((u) => u.userId)), [users]);
+
+  const filteredDataSources = useMemo(() => {
+    const q = dsSearch.trim().toLowerCase();
+    return allDataSources.filter((ds) => {
+      if (dsTypeFilter !== "all" && ds.type !== dsTypeFilter) return false;
+      if (dsSelectedOnly && !selectedDsIds.has(ds.id)) return false;
+      if (q && !ds.name.toLowerCase().includes(q) && !ds.type.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [allDataSources, dsSearch, dsTypeFilter, dsSelectedOnly, selectedDsIds]);
+
+  const filteredUsers = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+    return allUsers.filter((u) => {
+      if (userSelectedOnly && !selectedUserIds.has(u.id)) return false;
+      if (q && !u.name.toLowerCase().includes(q) && !u.email.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [allUsers, userSearch, userSelectedOnly, selectedUserIds]);
 
   function toggleDataSource(dsId: string) {
     const exists = dataSources.find((d) => d.dataSourceId === dsId);
@@ -155,12 +199,54 @@ export function WorkspaceEditor({
             Pick which connections this workspace exposes. Optionally restrict to specific tables.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="max-h-[420px] space-y-3 overflow-y-auto pr-2">
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-48 flex-1">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                value={dsSearch}
+                onChange={(e) => setDsSearch(e.target.value)}
+                placeholder="Search connections…"
+                className="h-9 pl-8"
+              />
+            </div>
+            {dsTypes.length > 1 && (
+              <Select value={dsTypeFilter} onValueChange={setDsTypeFilter}>
+                <SelectTrigger className="h-9 w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All types</SelectItem>
+                  {dsTypes.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <Button
+              type="button"
+              variant={dsSelectedOnly ? "default" : "outline"}
+              size="sm"
+              onClick={() => setDsSelectedOnly((v) => !v)}
+            >
+              Selected only ({selectedDsIds.size})
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {filteredDataSources.length} of {allDataSources.length}
+            </span>
+          </div>
+          <div className="max-h-[330px] space-y-3 overflow-y-auto pr-2">
             {allDataSources.length === 0 && (
               <p className="py-6 text-center text-sm text-muted-foreground">No connections yet.</p>
             )}
-            {allDataSources.map((ds) => {
+            {allDataSources.length > 0 && filteredDataSources.length === 0 && (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No connections match the current filter.
+              </p>
+            )}
+            {filteredDataSources.map((ds) => {
               const selected = dataSources.find((d) => d.dataSourceId === ds.id);
               const tablesStr = selected?.allowedTables ? selected.allowedTables.join(", ") : "";
               return (
@@ -211,12 +297,39 @@ export function WorkspaceEditor({
             Assign users to this workspace and set their permission level.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="max-h-[420px] space-y-3 overflow-y-auto pr-2">
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-48 flex-1">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="Search users by name or email…"
+                className="h-9 pl-8"
+              />
+            </div>
+            <Button
+              type="button"
+              variant={userSelectedOnly ? "default" : "outline"}
+              size="sm"
+              onClick={() => setUserSelectedOnly((v) => !v)}
+            >
+              Selected only ({selectedUserIds.size})
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {filteredUsers.length} of {allUsers.length}
+            </span>
+          </div>
+          <div className="max-h-[330px] space-y-3 overflow-y-auto pr-2">
             {allUsers.length === 0 && (
               <p className="py-6 text-center text-sm text-muted-foreground">No users yet.</p>
             )}
-            {allUsers.map((u) => {
+            {allUsers.length > 0 && filteredUsers.length === 0 && (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No users match the current filter.
+              </p>
+            )}
+            {filteredUsers.map((u) => {
               const selected = users.find((x) => x.userId === u.id);
               return (
                 <div
