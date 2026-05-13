@@ -187,7 +187,7 @@ export async function POST(request: Request, { params }: RouteCtx) {
         response = jsonRpcSuccess(body.id ?? null, {
           protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: `mcp-gateway (workspace: ${workspace.name})`, version: "0.1.0" },
+          serverInfo: buildServerInfo(`MCP Gateway — ${workspace.name}`),
         });
         const res = NextResponse.json(response, { headers: { "Mcp-Session-Id": sessionId } });
         after(() =>
@@ -416,5 +416,25 @@ function filterListResult(result: McpToolResult, allowed: string[]): McpToolResu
       if (c.type !== "text") return c;
       return { type: "text" as const, text: filterListedTablesText(c.text, allowed) };
     }),
+  };
+}
+
+// Mirrors the helper in /api/mcp/u/[uid]/route.ts. SEP-973 / MCP 2025-11-25
+// added `icons` to Implementation; clients on older spec ignore the field.
+function buildServerInfo(title: string) {
+  const issuer = process.env.OIDC_ISSUER ?? "";
+  return {
+    name: "mcp-gateway",
+    title,
+    version: "0.1.0",
+    icons: issuer
+      ? [
+          {
+            src: `${issuer}/logo.png`,
+            mimeType: "image/png",
+            sizes: ["256x256"],
+          },
+        ]
+      : undefined,
   };
 }

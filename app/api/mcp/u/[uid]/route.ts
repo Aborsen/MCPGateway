@@ -184,7 +184,7 @@ export async function POST(request: Request, { params }: RouteCtx) {
         response = jsonRpcSuccess(body.id ?? null, {
           protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: "mcp-gateway", version: "0.1.0" },
+          serverInfo: buildServerInfo("MCP Gateway"),
         });
         const res = NextResponse.json(response, {
           headers: { "Mcp-Session-Id": sessionId },
@@ -415,5 +415,27 @@ function filterListResult(result: McpToolResult, allowed: string[]): McpToolResu
       if (c.type !== "text") return c;
       return { type: "text" as const, text: filterListedTablesText(c.text, allowed) };
     }),
+  };
+}
+
+// MCP serverInfo with title + icons (SEP-973 / 2025-11-25). Clients that
+// don't yet read these fields just ignore them, so adding them costs nothing
+// and gives us automatic branding the moment Claude (and others) ship icon
+// support. Same-origin icon URL per the security note in the spec.
+function buildServerInfo(title: string) {
+  const issuer = process.env.OIDC_ISSUER ?? "";
+  return {
+    name: "mcp-gateway",
+    title,
+    version: "0.1.0",
+    icons: issuer
+      ? [
+          {
+            src: `${issuer}/logo.png`,
+            mimeType: "image/png",
+            sizes: ["256x256"],
+          },
+        ]
+      : undefined,
   };
 }
