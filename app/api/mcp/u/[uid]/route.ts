@@ -90,15 +90,24 @@ export async function POST(request: Request, { params }: RouteCtx) {
     return unauthorized("insufficient_scope", "Access token is missing the 'mcp' scope");
   }
 
+  // The URL's uid is a routing handle; the OAuth-authenticated account is
+  // authoritative. We confirm the OAuth user exists and isn't deleted, and
+  // use *their* permissions — regardless of which user-shaped URL Claude
+  // happened to be configured with. (An older design enforced uid ===
+  // accountId; that produced 403s any time admin generated a URL for user
+  // X then signed in via OAuth as admin, which is the common demo flow.)
+  const accountId = accessToken.accountId as string;
   const user = await prisma.user.findUnique({
-    where: { mcpUid: uid },
-    select: { id: true, deletedAt: true },
+    where: { id: accountId },
+    select: { id: true, deletedAt: true, mcpUid: true },
   });
   if (!user || user.deletedAt) {
     return NextResponse.json({ error: "user_not_found" }, { status: 404 });
   }
-  if (user.id !== accessToken.accountId) {
-    return NextResponse.json({ error: "uid_mismatch" }, { status: 403 });
+  if (user.mcpUid && user.mcpUid !== uid) {
+    // Audit-only log: user pasted someone else's URL but authenticated
+    // as themselves. Proceed with the authenticated user's permissions.
+    console.warn(`[mcp] uid in URL (${uid}) doesn't match authenticated user's mcpUid (${user.mcpUid}); using authenticated user.`);
   }
   const userId = user.id;
 
