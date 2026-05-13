@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
-import { provider, getMcpResourceUrl } from "@/lib/oidc/provider";
+import { getProvider, getMcpResourceUrl } from "@/lib/oidc/provider";
 import { writeAudit } from "@/lib/mcp/audit";
 import {
   getUserAccess,
@@ -70,7 +70,7 @@ export async function POST(request: Request, { params }: RouteCtx) {
     return unauthorized();
   }
   const token = authHeader.slice(7);
-  const accessToken = await provider.AccessToken.find(token);
+  const accessToken = await getProvider().AccessToken.find(token);
   if (!accessToken) {
     return unauthorized("invalid_token", "Access token not found or expired");
   }

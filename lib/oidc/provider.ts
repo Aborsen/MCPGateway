@@ -85,6 +85,9 @@ function buildProvider(): Provider {
   });
 }
 
+// Lazy singleton. All callers use getProvider() so the env-var read happens
+// at first use, not at module import time (keeps the Vercel build green even
+// before env vars are configured).
 let _provider: Provider | undefined;
 export function getProvider(): Provider {
   if (!_provider) {
@@ -96,16 +99,6 @@ export function getProvider(): Provider {
   }
   return _provider;
 }
-
-// Convenience proxy for code paths that already imported `provider` directly.
-// Each access re-resolves; the underlying instance is cached above.
-export const provider = new Proxy({} as Provider, {
-  get(_t, prop) {
-    const p = getProvider() as unknown as Record<string | symbol, unknown>;
-    const value = p[prop];
-    return typeof value === "function" ? (value as Function).bind(getProvider()) : value;
-  },
-});
 
 function cryptoRandomId(): string {
   return globalThis.crypto.randomUUID().replace(/-/g, "").slice(0, 14);

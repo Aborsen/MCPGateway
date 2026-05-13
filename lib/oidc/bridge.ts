@@ -1,5 +1,5 @@
 import { toReqRes, toFetchResponse } from "fetch-to-node";
-import { provider } from "./provider";
+import { getProvider } from "./provider";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 // Web Request → Node (req, res) → oidc-provider Koa callback → Web Response.
@@ -15,7 +15,7 @@ let cachedCallback: ((req: IncomingMessage, res: ServerResponse) => void) | unde
 
 function getCallback(): (req: IncomingMessage, res: ServerResponse) => void {
   if (!cachedCallback) {
-    cachedCallback = provider.callback();
+    cachedCallback = getProvider().callback();
   }
   return cachedCallback;
 }

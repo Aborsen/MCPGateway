@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { provider } from "@/lib/oidc/provider";
+import { getProvider } from "@/lib/oidc/provider";
 import { nodifyRequest } from "@/lib/oidc/bridge";
 import { auth } from "@/lib/auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +18,7 @@ export default async function InteractionPage({ params }: Props) {
   const request = buildRequest(hdrs, uid);
   const { req, res } = nodifyRequest(request);
 
+  const provider = getProvider();
   let details;
   try {
     details = await provider.interactionDetails(req, res);

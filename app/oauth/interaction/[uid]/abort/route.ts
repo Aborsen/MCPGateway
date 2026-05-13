@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
-import { provider } from "@/lib/oidc/provider";
+import { getProvider } from "@/lib/oidc/provider";
 import { nodifyRequest } from "@/lib/oidc/bridge";
 
 export const runtime = "nodejs";
@@ -16,7 +16,7 @@ export async function POST(request: Request, { params }: RouteCtx) {
   const url = `${proto}://${host}/oauth/interaction/${uid}`;
   const req = new Request(url, { method: "GET", headers: new Headers(request.headers) });
   const { req: nodeReq, res: nodeRes } = nodifyRequest(req);
-  const result = await provider.interactionResult(nodeReq, nodeRes, {
+  const result = await getProvider().interactionResult(nodeReq, nodeRes, {
     error: "access_denied",
     error_description: "End-user aborted the interaction",
   });
