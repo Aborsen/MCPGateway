@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plug, Users, AlertTriangle, Percent } from "lucide-react";
+import { Plug, Users, AlertTriangle, Activity } from "lucide-react";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getDashboardMetrics } from "@/lib/dashboard-metrics";
@@ -26,14 +26,14 @@ export default async function WorkspacePage() {
   return (
     <>
       <PageHeader
-        title="Workspace"
+        title="Dashboard"
         description="Live overview of users, connectors, and MCP query activity."
       />
       <div className="space-y-6 p-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label="Users" value={fmtNum(m.userCount)} icon={Users} href="/users" />
           <StatCard label="Connectors" value={fmtNum(m.connectorCount)} icon={Plug} href="/connections" />
-          <StatCard label="Queries · 24h" value={fmtNum(m.queries24h)} icon={Percent} href="/audit" />
+          <StatCard label="Queries · 24h" value={fmtNum(m.queries24h)} icon={Activity} href="/audit" />
           <StatCard
             label="Errors · 24h"
             value={`${fmtNum(m.errors24h)} · ${fmtPct(m.errorRate24h)}`}

@@ -161,7 +161,8 @@ All version pins come from [package.json](package.json).
 | `@auth/prisma-adapter` | ^2.11.2 | Prisma adapter for Auth.js (declared but not actively used since JWT sessions are stateless; kept available for future DB sessions). |
 | `oidc-provider` | ^9.8.3 | RFC-compliant OAuth 2.1 / OIDC server for the MCP endpoint. **Must remain in `serverExternalPackages`.** |
 | `jose` | ^6.2.3 | JOSE primitives (JWKS generation, JWT signing/verify). |
-| `bcryptjs`, `@types/bcryptjs` | ^3.0.3 | Password hashing for admin users. |
+| `bcryptjs` | ^3.0.3 | Password hashing for admin users. |
+| `@types/bcryptjs` | ^2.4.6 | Types for `bcryptjs` (the v2 types still match the v3 runtime API). |
 
 ### 3.4 Cryptography
 
@@ -190,6 +191,8 @@ All version pins come from [package.json](package.json).
 | `clsx` | ^2.1.1 | Conditional class joiner. |
 | `lucide-react` | ^1.14.0 | Icon set. |
 | `next-themes` | ^0.4.6 | Dark/light theme toggle. |
+| `react-markdown` | ^10.1.0 | Renders the in-product spec viewer at `/specs`. |
+| `remark-gfm` | ^4.0.1 | GitHub-flavored markdown plugin for the spec viewer (tables, task lists, strikethrough). |
 
 ### 3.6 Validation & Utilities
 
@@ -247,7 +250,7 @@ Not part of the build — run via `npx tsx scripts/<name>.ts`.
 
 **Provider**: Postgres only. The `datasource` block in [prisma/schema.prisma](prisma/schema.prisma) declares `provider = "postgresql"` and the connection URL is wired through `process.env.DATABASE_URL` in [prisma.config.ts](prisma.config.ts). The Prisma client is constructed lazily via a `Proxy` in [lib/db.ts](lib/db.ts) so `next build` succeeds even before env vars are present on Vercel.
 
-**Migrations**: production uses `prisma migrate deploy` (`npm run db:migrate`). Local dev currently uses `prisma db push`; the repo does not yet contain a `prisma/migrations` directory (see [§18](#18-known-limitations--future-work)).
+**Migrations**: production uses `prisma migrate deploy` (`npm run db:migrate`). The baseline migration plus subsequent schema changes (e.g. `Workspace.mcpUid`) live under [prisma/migrations/](prisma/migrations/) with [migration_lock.toml](prisma/migrations/migration_lock.toml). Local dev may still use `prisma db push` for quick iteration, but committed schema changes should go through `prisma migrate dev` so the migration history stays consistent with the deployed DB.
 
 ### 4.1 ER Diagram
 
@@ -575,7 +578,7 @@ sequenceDiagram
 
 | Method | Behavior |
 |---|---|
-| `initialize` | Returns protocol version `2025-06-18`, `capabilities.tools.listChanged: false`, server info. |
+| `initialize` | Returns protocol version `2025-06-18`, `capabilities.tools.listChanged: false`, and server info (see [§6.2.1](#621-serverinfo-shape)). |
 | `notifications/initialized` | Accepted (fire-and-forget). |
 | `notifications/cancelled` | Accepted (fire-and-forget). |
 | `notifications/progress` | Accepted (fire-and-forget). |
@@ -583,6 +586,23 @@ sequenceDiagram
 | `tools/list` | Aggregates all tools across the user's accessible data sources, filtered by permission level + table allowlist. |
 | `tools/call` | Parses `<slug>__<tool>` namespace, checks user has the required level, blocks raw-query tools when table allowlist is set, calls upstream, post-filters list-tool output, returns. |
 | anything else | `METHOD_NOT_FOUND` (-32601). |
+
+#### 6.2.1 `serverInfo` Shape
+
+The `initialize` response includes a `serverInfo` object built by `buildServerInfo()` in both MCP route handlers:
+
+```json
+{
+  "name": "MCP Gateway",
+  "title": "MCP Gateway",
+  "version": "<package.json version>",
+  "icons": [
+    { "src": "${OIDC_ISSUER}/logo.png", "sizes": "any", "mimeType": "image/png" }
+  ]
+}
+```
+
+The `title` and `icons` fields are forward-compatible with the **2025-11-25** MCP draft ([SEP-973](https://github.com/modelcontextprotocol/specification/pull/973)). Clients on `protocolVersion: 2025-06-18` simply ignore them; newer clients (e.g. Claude Code's current builds) display the title and icon next to the gateway's tool calls, which is helpful when a user has several MCP servers configured.
 
 ### 6.3 Tool Aggregation, Namespacing, and Discovery
 
@@ -757,11 +777,13 @@ Indexed on five common filter combinations (see schema) — query patterns like 
 A separate table for admin-panel actions, populated via [lib/admin-events.ts](lib/admin-events.ts). Event types include:
 
 - `USER_LOGIN`, `USER_LOGOUT`
-- `USER_CREATED`, `USER_DELETED`, `USER_PASSWORD_CHANGED`, `USER_ROLE_CHANGED`
+- `USER_CREATED`, `USER_UPDATED`, `USER_DELETED`, `USER_PASSWORD_CHANGED`, `USER_ROLE_CHANGED`
 - `USER_DATA_SOURCE_ACCESS_CHANGED`, `USER_DATA_SOURCE_ACCESS_REVOKED`
 - `TOOL_LEVEL_OVERRIDDEN`
 
 Actor (`actorId`) and target user (`targetUserId`) are both `SetNull` on delete so the audit trail survives user deletion.
+
+`detailsJson` is passed through `truncateJson()` with a **4 KB cap** ([lib/admin-events.ts:36](lib/admin-events.ts:36)) — half the 8 KB default used for `AuditLog.requestJson` / `responseJson`. Admin actions don't carry payloads, so the smaller cap is plenty and keeps the table lean.
 
 ### 9.3 Retention Cron
 
@@ -828,7 +850,8 @@ All under [app/(dashboard)/](app/(dashboard)/). The route group guard in [app/(d
 | Workspaces (`/workspaces`) | CRUD workspaces, members, attached data sources, table allowlists; rotate workspace MCP URL. | [app/(dashboard)/workspaces/](app/(dashboard)/workspaces/) |
 | Permissions (`/permissions`) | Matrix view (users × connectors) and breakdowns by-connection / by-user; inline editor + bulk actions. | [app/(dashboard)/permissions/](app/(dashboard)/permissions/) |
 | Audit (`/audit`) | Tabs: full audit log + query log (filtered to tool calls). CSV export via [lib/csv.ts](lib/csv.ts). | [app/(dashboard)/audit/](app/(dashboard)/audit/) |
-| Settings (`/settings`) | Global settings (retention, etc.). | [app/(dashboard)/settings/](app/(dashboard)/settings/) |
+| Settings (`/settings`) | Global settings (retention, etc.). Accessed via the avatar dropdown at the bottom of the sidebar — not a top-level nav item. | [app/(dashboard)/settings/](app/(dashboard)/settings/) |
+| Specifications (`/specs`) | In-product spec viewer that renders [SPECIFICATIONS.md](SPECIFICATIONS.md) with a scroll-spy TOC rail. OWNER/ADMIN-gated. Accessed via the avatar dropdown. | [app/specs/](app/specs/) |
 
 ---
 
@@ -866,7 +889,6 @@ Cross-reference checklist for security review.
 - ⚠️ In-memory rate limit is per-process — not adversary-proof on multi-instance deployments.
 - ⚠️ JWKS is not rotatable at runtime.
 - ⚠️ `AdminEvent` is not pruned by the retention cron (only `AuditLog` is).
-- ⚠️ The repo has no `prisma/migrations` directory; production deploys must baseline once before `db:migrate` becomes safe.
 - ⚠️ Cookie `Secure`/`HttpOnly` flags are not explicitly set in code — relies on platform defaults (Vercel sets `Secure` on HTTPS by default).
 - ⚠️ The table allowlist post-response scrubber **fails open** if it can't parse the response format (intentional — the security boundary is the pre-call check).
 
@@ -922,8 +944,8 @@ npx tsx scripts/generate-jwks.ts | Out-File jwks.json -Encoding utf8
 #    (paste the secrets generated above)
 
 # 5. Initialise the DB
-npm run db:push   # sync schema (no migrations history)
-npm run db:seed   # seed demo data
+npm run db:migrate   # apply committed migrations  (use db:push for quick local iteration)
+npm run db:seed      # seed demo data
 
 # 6. Run
 npm run dev
@@ -968,18 +990,9 @@ A clean install is correct if:
 
 Provision Postgres (Neon recommended for Vercel — pooled connection string handles serverless fan-out). The `DATABASE_URL` should be the **pooled** URL.
 
-### 15.2 Migration Baseline (One-Time)
+### 15.2 Migrations
 
-The repo currently uses `prisma db push` and has no `prisma/migrations` directory. Before the first production deploy, baseline migrations:
-
-```bash
-# Locally, against the production DB (or a fresh staging DB):
-npx prisma migrate dev --name init
-git add prisma/migrations
-git commit -m "Baseline initial migration"
-```
-
-After this, production deploys can safely run `npm run db:migrate` (= `prisma migrate deploy`).
+Production deploys run `npm run db:migrate` (= `prisma migrate deploy`) to apply any pending migrations from [prisma/migrations/](prisma/migrations/). The baseline (`20260513000000_init`) plus subsequent migrations are committed to the repo; new schema changes should be generated with `prisma migrate dev` and committed alongside the schema edit.
 
 ### 15.3 Vercel Project Settings
 
@@ -1067,7 +1080,7 @@ Mirrors [.env.example](.env.example) and adds usage citations.
 | 401 on every MCP call | Token expired (1h TTL) or audience mismatch | Re-OAuth in Claude Code. If audience: confirm `OIDC_ISSUER` is the exact deploy origin with no trailing slash. |
 | Workspace URL stops working with no warning | Admin rotated the workspace `mcpUid` | This is by design — old URL is invalidated. Send the new URL to members. |
 | Sign-in says "too many attempts" | Per-IP rate limit (10 / 15 min) | Wait, or restart the dev server to clear the in-memory bucket. |
-| `prisma migrate deploy` complains about drift | Schema has been pushed via `db:push` but no migrations exist | Baseline first: `prisma migrate dev --name init`, commit, then re-deploy. |
+| `prisma migrate deploy` complains about drift | Local dev DB was edited via `db:push` after the migration baseline was generated | Run `npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --script` to produce a corrective migration, or `prisma migrate reset` against the local DB and re-seed. |
 | Vercel deployment Ready but root URL returns NOT_FOUND | Framework preset = `null` | `PATCH /v9/projects/{id}` with `{"framework":"nextjs"}` via the Vercel REST API. |
 
 ### 17.3 Common Maintenance Tasks
@@ -1077,8 +1090,7 @@ Mirrors [.env.example](.env.example) and adds usage citations.
 | Reset a user's password | `npx tsx scripts/set-password.ts <email>` |
 | Dump audit log to CSV | `npx tsx scripts/dump-audit.ts` |
 | Inspect user access matrix | `npx tsx scripts/dump-user-access.ts` |
-| Bootstrap an `OWNER` user on a fresh deploy | `POST /api/admin/bootstrap-owners` (see [app/api/admin/bootstrap-owners/route.ts](app/api/admin/bootstrap-owners/route.ts)) |
-| Apply ad-hoc DB migrations | `POST /api/admin/apply-pending-migrations` (see [app/api/admin/apply-pending-migrations/route.ts](app/api/admin/apply-pending-migrations/route.ts)) |
+| Apply DB migrations | `npm run db:migrate` (= `prisma migrate deploy`) |
 | Open the DB browser | `npm run db:studio` |
 
 ---
@@ -1088,7 +1100,6 @@ Mirrors [.env.example](.env.example) and adds usage citations.
 | Area | Limitation | Path forward |
 |---|---|---|
 | Database | Postgres-only (no SQLite fallback). | Use Docker Postgres locally; that's the supported flow. |
-| Migrations | No `prisma/migrations` directory yet; production needs a baseline before `db:migrate` is safe. | Run `prisma migrate dev --name init` once and commit. |
 | Rate limit | In-memory per process; effective rate = `instances × declared`. | Port [lib/rate-limit.ts](lib/rate-limit.ts) to Redis (Upstash) for multi-instance deploys. |
 | OAuth state | `oidc-provider` WeakMaps are per-process. | Multi-instance deploys need a shared cache or routing affinity. |
 | Tool list cache | 30-second TTL, in-memory, no manual flush. | Add a cache-buster button or use Redis with PubSub-driven invalidation. |
