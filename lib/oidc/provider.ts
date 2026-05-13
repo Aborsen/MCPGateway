@@ -39,7 +39,9 @@ function buildProvider(): Provider {
       useGrantedResource: () => true,
       getResourceServerInfo: () => ({
         scope: "mcp",
-        accessTokenFormat: "jwt",
+        // Opaque access tokens (default). The resource server is the same
+        // process as the AS, so we validate via provider.AccessToken.find
+        // — no need to issue JWTs the client can introspect itself.
         accessTokenTTL: 60 * 60,
         audience: resourceBase,
       }),

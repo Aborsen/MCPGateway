@@ -77,8 +77,13 @@ export async function POST(request: Request, { params }: RouteCtx) {
   if (accessToken.isExpired) {
     return unauthorized("invalid_token", "Access token is expired");
   }
-  const aud = Array.isArray(accessToken.aud) ? accessToken.aud[0] : accessToken.aud;
-  if (aud !== getMcpResourceUrl()) {
+  // Opaque tokens carry the audience in `resource`; JWT tokens use `aud`.
+  // Accept either to stay agnostic to the access-token format.
+  const expectedResource = getMcpResourceUrl();
+  const tokenResource =
+    (accessToken as unknown as { resource?: string }).resource ??
+    (Array.isArray(accessToken.aud) ? accessToken.aud[0] : accessToken.aud);
+  if (tokenResource !== expectedResource) {
     return unauthorized("invalid_token", "Access token audience does not match this resource");
   }
   if (!accessToken.scopes?.has("mcp")) {
