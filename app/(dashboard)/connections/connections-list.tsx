@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { ConnectionFormDialog, type Connection } from "./connection-form";
+import { NewConnectionChooser } from "./new-connection-chooser";
 
 export type { Connection };
 
@@ -56,6 +57,7 @@ const TYPE_COLORS: Record<string, string> = {
 export function ConnectionsList({ initial }: { initial: Connection[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [chooserOpen, setChooserOpen] = useState(false);
   const [editing, setEditing] = useState<Connection | null>(null);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -104,6 +106,12 @@ export function ConnectionsList({ initial }: { initial: Connection[] }) {
   }, [initial, search, typeFilter, usageFilter, sortKey, sortDir]);
 
   function onAdd() {
+    // Open the chooser; the chooser routes to either the catalog page
+    // or the manual ConnectionFormDialog depending on the user's pick.
+    setChooserOpen(true);
+  }
+
+  function onPickCustom() {
     setEditing(null);
     setOpen(true);
   }
@@ -296,6 +304,12 @@ export function ConnectionsList({ initial }: { initial: Connection[] }) {
           </div>
         </>
       )}
+
+      <NewConnectionChooser
+        open={chooserOpen}
+        onOpenChange={setChooserOpen}
+        onPickCustom={onPickCustom}
+      />
 
       <ConnectionFormDialog
         open={open}

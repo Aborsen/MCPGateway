@@ -1,8 +1,9 @@
-import { decryptJson } from "@/lib/crypto";
+import { decryptJson, encryptJson } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { mockUpstreamCall, mockUpstreamList } from "./mock-upstream";
 import { classifyToolByName } from "./permission-filter";
 import { ERROR_CODES, type McpTool, type McpToolResult, MCP_PROTOCOL_VERSION } from "./types";
+import { getOAuthCredentials, getOAuthProvider } from "@/lib/connector-oauth";
 
 type Connector = {
   id: string;
@@ -12,9 +13,22 @@ type Connector = {
 };
 
 export type EncryptedConfig = {
-  authScheme?: "bearer" | "customHeaders" | "none";
+  // Existing schemes for "Custom MCP URL" connectors.
+  authScheme?: "bearer" | "customHeaders" | "none" | "oauth";
   apiKey?: string;
   customHeaders?: Record<string, string>;
+  // OAuth-stored tokens for catalog connectors. `providerKey` is the same
+  // key used in lib/connector-oauth.ts (e.g. "hubspot", "zoho-crm"); we
+  // look up the token URL there to refresh.
+  oauth?: {
+    providerKey: string;
+    accessToken: string;
+    refreshToken?: string;
+    expiresAt?: number; // epoch ms
+  };
+  // Free-form extras for vendor-specific routing (e.g. Zoho regional API
+  // domain, Supabase project ref). Adapters read these directly.
+  extra?: Record<string, string>;
 };
 
 // Reserved header keys an admin cannot override via customHeaders.
@@ -81,17 +95,92 @@ async function getAuthHeaders(connector: Connector): Promise<Record<string, stri
       if (RESERVED_HEADERS.has(k.toLowerCase())) continue;
       out[k] = v;
     }
+  } else if (scheme === "oauth" && cfg.oauth) {
+    const token = await ensureFreshOAuthToken(connector.id, cfg);
+    out.Authorization = `Bearer ${token}`;
   }
   return out;
 }
 
+// Refresh the upstream OAuth access token if expired (or about to expire),
+// persisting the new token back to the connector. Returns the access token
+// the caller should use on this request. Falls back to the existing token
+// if refresh fails — the proxy then surfaces upstream's 401 naturally.
+const REFRESH_LEEWAY_MS = 60_000; // refresh 60s early
+export async function ensureFreshOAuthToken(
+  connectorId: string,
+  cfg: EncryptedConfig,
+): Promise<string> {
+  if (!cfg.oauth) return "";
+  const { providerKey, accessToken, refreshToken, expiresAt } = cfg.oauth;
+  const expired = expiresAt !== undefined && expiresAt - Date.now() < REFRESH_LEEWAY_MS;
+  if (!expired || !refreshToken) return accessToken;
+
+  const provider = getOAuthProvider(providerKey);
+  const creds = getOAuthCredentials(providerKey);
+  if (!provider || !creds) return accessToken;
+
+  try {
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: creds.clientId,
+      client_secret: creds.clientSecret,
+    });
+    const res = await fetch(provider.tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body,
+    });
+    if (!res.ok) return accessToken;
+    const data = (await res.json()) as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+    };
+    if (!data.access_token) return accessToken;
+    const newCfg: EncryptedConfig = {
+      ...cfg,
+      oauth: {
+        providerKey,
+        accessToken: data.access_token,
+        // Some vendors rotate the refresh token; keep the new one if sent.
+        refreshToken: data.refresh_token ?? refreshToken,
+        expiresAt:
+          data.expires_in !== undefined ? Date.now() + data.expires_in * 1000 : undefined,
+      },
+    };
+    const encrypted = await encryptJson(newCfg);
+    await prisma.dataSource
+      .update({ where: { id: connectorId }, data: { configEncrypted: encrypted } })
+      .catch(() => undefined);
+    return data.access_token;
+  } catch {
+    return accessToken;
+  }
+}
+
+// Adapter routes hosted in this same Next.js app live under
+// /api/upstream-mcp/... and require an internal-guard header so they can't
+// be hit directly by third parties. The guard value is MCP_CONFIG_KEY,
+// which is already required in production and which only this process
+// knows. Detect "us calling us" by upstreamUrl prefix.
+function isLoopbackAdapterUrl(url: string): boolean {
+  const issuer = process.env.OIDC_ISSUER;
+  if (!issuer) return false;
+  return url.startsWith(`${issuer}/api/upstream-mcp/`);
+}
+
 async function buildHeaders(connector: Connector): Promise<Record<string, string>> {
-  // Auth headers first; protocol headers spread last to win on collision.
-  return {
+  const headers: Record<string, string> = {
     ...(await getAuthHeaders(connector)),
     "Content-Type": "application/json",
     Accept: "application/json, text/event-stream",
   };
+  if (isLoopbackAdapterUrl(connector.upstreamUrl) && process.env.MCP_CONFIG_KEY) {
+    headers["x-mcpgw-internal"] = process.env.MCP_CONFIG_KEY;
+  }
+  return headers;
 }
 
 async function fetchRealUpstreamList(connector: Connector): Promise<McpTool[]> {
