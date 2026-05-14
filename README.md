@@ -6,7 +6,9 @@ Built with Next.js 16 + Prisma 7 + Postgres + Auth.js v5 + `oidc-provider`. Depl
 
 ## What it does
 
-1. Admin registers **Connections** (one row per upstream MCP server: Jira Cloud, Salesforce, etc.).
+1. Admin registers **Connections** in one of two ways:
+   - **Create connection** — pick from a built-in catalog (HubSpot, Salesforce, Supabase, Zoho CRM today; more coming). A Skyvia-style modal collects the connection name and an access token (via OAuth popup or pasted PAT), plus per-vendor advanced settings. The gateway **generates its own MCP server** for the new connection — no dependency on whether the vendor ships an MCP.
+   - **Existing MCP URL** — paste the URL of an existing remote MCP server (and any auth headers) for anything not in the catalog.
 2. Admin creates **Workspaces** that bundle Connections, optionally restricting which tables/objects each workspace can touch.
 3. Admin adds **Users** to Workspaces with permission levels (`select | insert | update | delete | execute`), or grants users direct per-Connection access.
 4. Each user (or each workspace) gets its own OAuth-secured MCP URL. Claude Code completes a PKCE flow against the gateway, then sends `Authorization: Bearer …` on every JSON-RPC call.
@@ -63,14 +65,15 @@ All seeded connectors point at `mcp.example.com/*` and resolve through a built-i
 
 1. Log in as `admin@devart.com` → land on **Dashboard** (live overview of users, connectors, queries, errors).
 2. **Connections** → open Jira Cloud → see its tool catalog with per-tool permission overrides.
-3. **Workspaces** → **Sales Team** → see HubSpot restricted to `contacts, deals` only. Hit **Copy MCP URL** to grab the workspace's OAuth URL — every member of Sales Team can paste the same URL into their own Claude Code.
-4. **Users** → Alice → grab her personal MCP URL (the union of her workspace memberships + direct grants).
-5. Drop the URL into Claude Code's `~/.claude.json`:
+3. **Connections** → **Add Connection** → **Create connection** → pick HubSpot. The modal opens with a name field, an access-token field, and an advanced-settings section. Paste a HubSpot Private App token (or click **Sign In with HubSpot** if OAuth credentials are configured), Continue — a new MCP-backed HubSpot connection appears in the list. Same flow for Salesforce, Supabase, Zoho CRM. (Postgres / BigQuery / Snowflake / Databricks are visible in the catalog as "Coming soon" cards.)
+4. **Workspaces** → **Sales Team** → see HubSpot restricted to `contacts, deals` only. Hit **Copy MCP URL** to grab the workspace's OAuth URL — every member of Sales Team can paste the same URL into their own Claude Code.
+5. **Users** → Alice → grab her personal MCP URL (the union of her workspace memberships + direct grants).
+6. Drop the URL into Claude Code's `~/.claude.json`:
    ```json
    { "mcpServers": { "mcp-gateway": { "url": "<copied URL>" } } }
    ```
-6. Claude Code does the OAuth dance (PKCE), then `tools/list` returns just the tools Alice is allowed to use. Try a write — it succeeds (Alice has `update`). Try a delete — blocked. The action lands in **Audit** in real time.
-7. **Specifications** → open the avatar menu at the bottom of the sidebar to read the full architecture/spec inside the app (OWNER/ADMIN-gated).
+7. Claude Code does the OAuth dance (PKCE), then `tools/list` returns just the tools Alice is allowed to use. Try a write — it succeeds (Alice has `update`). Try a delete — blocked. The action lands in **Audit** in real time.
+8. **Specifications** → open the avatar menu at the bottom of the sidebar to read the full architecture/spec inside the app (OWNER/ADMIN-gated).
 
 ## Deploying to Vercel
 
@@ -90,6 +93,17 @@ The repo is set up to deploy cleanly with `vercel.json` declaring the audit-prun
    | `OIDC_JWKS` | Output of `npx tsx scripts/generate-jwks.ts`, as a single-line string |
    | `CRON_SECRET` | `openssl rand -hex 32` — Vercel-cron auth for the audit-prune job |
    | `AUDIT_RETENTION_DAYS` | (Optional) days of audit-log rows to keep; defaults to `90` |
+
+   **Optional — connector-catalog OAuth (per vendor you want to enable):**
+
+   | Variable | Used by |
+   |---|---|
+   | `CONNECTOR_OAUTH_HUBSPOT_CLIENT_ID` / `_CLIENT_SECRET` | HubSpot catalog connector |
+   | `CONNECTOR_OAUTH_SALESFORCE_CLIENT_ID` / `_CLIENT_SECRET` | Salesforce catalog connector |
+   | `CONNECTOR_OAUTH_ZOHO_CRM_CLIENT_ID` / `_CLIENT_SECRET` | Zoho CRM catalog connector |
+   | `CONNECTOR_OAUTH_SUPABASE_CLIENT_ID` / `_CLIENT_SECRET` | Supabase catalog connector (optional — Supabase works with a pasted service_role key too) |
+
+   Each vendor needs an OAuth app registered with redirect URI `${OIDC_ISSUER}/api/connections/oauth/<slug>/callback` (slugs: `hubspot`, `salesforce`, `zoho-crm`, `supabase`). Without these, the catalog card still renders and pasted PATs still work — only the "Sign In with X" button is disabled.
 
    > **Preview-deploy gotcha:** `OIDC_ISSUER` must match the request origin exactly. Vercel preview deployments use different hostnames than the prod alias, so the OAuth flow only works on the prod alias unless you scope `OIDC_ISSUER` per-environment.
 
@@ -119,8 +133,16 @@ Both routes handle `initialize`, `tools/list`, `tools/call`, `ping`, and the `no
 ### Permission filtering & upstream
 
 - **[lib/mcp/permission-filter.ts](lib/mcp/permission-filter.ts)** — rolls up workspace + direct-grant permissions, classifies tools (`select` / `insert` / `update` / `delete` / `execute`) via heuristic regex with admin overrides, enforces table allowlists at call-time, and scrubs list-tool responses. Blocks raw-SQL/SOQL/APEX tools when a table allowlist is in effect.
-- **[lib/mcp/upstream-client.ts](lib/mcp/upstream-client.ts)** — outbound JSON-RPC + SSE to upstream MCP servers, 30-second tool-list cache, 55-second timeout. Three auth schemes: `bearer`, `customHeaders`, `none`.
+- **[lib/mcp/upstream-client.ts](lib/mcp/upstream-client.ts)** — outbound JSON-RPC + SSE to upstream MCP servers, 30-second tool-list cache, 55-second timeout. Four auth schemes: `bearer`, `customHeaders`, `oauth` (with transparent refresh-token rotation), `none`.
 - **[lib/mcp/mock-upstream.ts](lib/mcp/mock-upstream.ts)** — deterministic responses for `mcp.example.com/*` and `mock:*` URLs so demos work offline.
+
+### Connector catalog (Skyvia-style "Create connection")
+
+- **[lib/connector-catalog.ts](lib/connector-catalog.ts)** — hardcoded list of 14 catalog entries. 4 are wired up today (HubSpot, Salesforce, Supabase, Zoho CRM); the rest render as "Coming soon" cards (Postgres / BigQuery / Snowflake / Databricks / Vertica / Google Drive / Google Sheets / OneDrive / Google Ads / Meta Ads).
+- **[app/(dashboard)/connections/new/catalog/](app/(dashboard)/connections/new/catalog/)** — catalog grid + the "Connect to <vendor>" modal. The modal accepts a connection name, an access token (paste OR OAuth popup via [lib/hooks/use-oauth-popup.ts](lib/hooks/use-oauth-popup.ts)), and per-vendor advanced settings, then POSTs [`/api/connections/from-catalog`](app/api/connections/from-catalog/route.ts) which creates the DataSource.
+- **[lib/upstream-adapters/](lib/upstream-adapters/)** — in-process MCP servers that translate vendor REST APIs to MCP JSON-RPC. Generic dispatcher at [`/api/upstream-mcp/[adapter]/[connectorId]`](app/api/upstream-mcp/) is gated by an `x-mcpgw-internal: ${MCP_CONFIG_KEY}` header so only the gateway's own proxy can invoke it. The proxy's `upstreamUrl` for a catalog connection points back at this route, looping through the same audit / permission / rate-limit pipeline as any other connector.
+- **[lib/connector-oauth.ts](lib/connector-oauth.ts)** — per-vendor OAuth client config (authorize/token URLs, scopes, redirect URI builder). Client credentials read from `CONNECTOR_OAUTH_<SLUG>_CLIENT_ID` / `_CLIENT_SECRET` env vars.
+- **[app/api/connections/oauth/[slug]/](app/api/connections/oauth/)** — `start/` does the PKCE redirect; `callback/` returns an HTML page that `window.postMessage`s the tokens back to the modal and closes the popup, instead of doing a full-page redirect.
 
 ### Audit, rate limiting, crypto
 
@@ -150,7 +172,8 @@ Both routes handle `initialize`, `tools/list`, `tools/call`, `ping`, and the `no
 - **In-memory rate limit** — per-process. Effective rate on multi-instance deploys is `instances × declared_rate`. Port to Redis when scaling horizontally.
 - **OIDC singleton WeakMaps** — `oidc-provider` keeps state in module-scoped WeakMaps; multi-instance deploys need either single-function affinity or a shared cache.
 - **Static JWKS** — no runtime rotation; rotating means redeploying with a new `OIDC_JWKS` and accepting that all issued tokens become invalid.
-- **Mock connectors only by default** — replace the seeded `upstreamUrl` + `configEncrypted` to point at real upstream MCP servers.
+- **Mock connectors only by default** — the 5 seeded connectors all point at `mcp.example.com/*`. Use **Add Connection → Create connection** to add real catalog-backed connectors (HubSpot, Salesforce, Supabase, Zoho CRM), or **Existing MCP URL** for any other upstream.
+- **Catalog OAuth is per-deploy, not per-tenant** — one OAuth app per vendor per deployment, configured via env vars. Multi-tenant per-customer OAuth apps would need a DB-backed config table.
 - **AdminEvent not pruned** — the daily cron only prunes `AuditLog`; `AdminEvent` grows unbounded (low cardinality, so this is OK for the demo timeframe).
 - **No CSP / CSRF middleware** — Auth.js handles CSRF for its own routes; nothing custom on top.
 

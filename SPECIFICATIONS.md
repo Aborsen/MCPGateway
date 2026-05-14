@@ -122,6 +122,10 @@ flowchart LR
 | Crypto | [lib/crypto.ts](lib/crypto.ts) | libsodium secretbox for connector-credential encryption + opaque token minting. |
 | Rate limit | [lib/rate-limit.ts](lib/rate-limit.ts) | In-memory sliding-window limiter. |
 | Cron | [app/api/cron/prune-audit/route.ts](app/api/cron/prune-audit/route.ts) | Daily audit retention prune, triggered by Vercel cron. |
+| Connector catalog | [lib/connector-catalog.ts](lib/connector-catalog.ts), [lib/connector-oauth.ts](lib/connector-oauth.ts) | Hardcoded list of vendor connectors offered via the "Create connection" modal flow. |
+| Catalog UI | [app/(dashboard)/connections/new/catalog/](app/(dashboard)/connections/new/catalog/) | Grid + Skyvia-style "Connect to <vendor>" modal that owns name + token field + advanced settings + OAuth popup. |
+| Catalog backend | [app/api/connections/oauth/[slug]/](app/api/connections/oauth/) (start + callback), [app/api/connections/from-catalog/route.ts](app/api/connections/from-catalog/route.ts) | OAuth PKCE start, popup-friendly callback (returns `postMessage` HTML, not a redirect), and the DataSource-creation endpoint the modal POSTs to. |
+| Upstream adapters | [lib/upstream-adapters/](lib/upstream-adapters/), [app/api/upstream-mcp/[adapter]/[connectorId]/route.ts](app/api/upstream-mcp/[adapter]/[connectorId]/route.ts) | In-process MCP servers (HubSpot, Salesforce, Supabase, Zoho CRM) that translate vendor REST APIs to MCP JSON-RPC. Generic dispatcher gated by an internal-only header. |
 | DB layer | [lib/db.ts](lib/db.ts), [prisma/schema.prisma](prisma/schema.prisma) | Lazy `PrismaClient` proxy using `@prisma/adapter-pg`. |
 
 ### 2.3 Request Paths
@@ -670,29 +674,37 @@ The matches are checked in destructive-first order, so `delete_and_create_new_re
 
 ## 7. Connectors / Data Sources
 
-A "connector" is a `DataSource` row that the gateway proxies to. Adding a connector is described in [§17.1](#171-adding-a-new-mcp-connector).
+A "connector" is a `DataSource` row that the gateway proxies to. There are two ways an admin can create one:
+
+- **Custom MCP URL** — paste the URL of an existing remote MCP server (Anthropic reference servers, vendor-hosted MCP servers, anything). The original flow, lives on the existing modal-form path.
+- **Create connection from catalog** — pick a vendor from a curated catalog. The gateway generates its own MCP server for the new connection ([§7.6](#76-connector-catalog--in-process-adapters)).
+
+Both paths produce a shape-identical `DataSource` row, so everything downstream (proxy, permission filter, audit, workspaces) is unaware of which path was used.
 
 ### 7.1 Configuration Model
 
 | Field | Purpose |
 |---|---|
 | `slug` | Stable identifier; used in the tool namespace (`<slug>__<tool>`). Changing it after deploy will break existing tool references. |
-| `type` | UI-only grouping (`operations`, `sales`, `marketing`, `database`). |
-| `upstreamUrl` | HTTP(S) URL of the upstream MCP server's JSON-RPC endpoint. URLs matching `mcp.example.com/*` or starting with `mock:` route to the mock provider — see [§7.3](#73-mock-mode). |
-| `configEncrypted` | libsodium-encrypted JSON blob: `{ authScheme: "bearer" | "customHeaders" | "none", apiKey?, customHeaders? }`. See [§10](#10-cryptography--secrets). |
+| `type` | UI-only grouping (`operations`, `sales`, `marketing`, `database`, `performance`, `finance`, `support`, `other`). |
+| `upstreamUrl` | HTTP(S) URL of the upstream MCP server's JSON-RPC endpoint. URLs matching `mcp.example.com/*` or starting with `mock:` route to the mock provider — see [§7.3](#73-mock-mode). Catalog-created connections get a loopback URL pointing at our own adapter route — see [§7.6](#76-connector-catalog--in-process-adapters). |
+| `configEncrypted` | libsodium-encrypted JSON blob. See [§7.2](#72-upstream-auth-schemes) for the variants. |
 | `description` | Free-form. |
 
 ### 7.2 Upstream Auth Schemes
 
-[lib/mcp/upstream-client.ts](lib/mcp/upstream-client.ts) supports three schemes (chosen via the decrypted config):
+[lib/mcp/upstream-client.ts](lib/mcp/upstream-client.ts) supports four schemes (chosen via the decrypted config):
 
 | Scheme | Headers added |
 |---|---|
-| `bearer` | `Authorization: Bearer {apiKey}` |
+| `bearer` | `Authorization: Bearer {apiKey}`. Used for custom MCP URLs with a static token, and for catalog connections that store a pasted PAT (no refresh). |
 | `customHeaders` | Arbitrary key/value pairs, with reserved keys (`Authorization`, `Content-Type`, `Mcp-Session-Id`, …) stripped to avoid clobbering protocol headers. |
+| `oauth` | Reads `{providerKey, accessToken, refreshToken, expiresAt}` from the encrypted config. Calls `ensureFreshOAuthToken()` to refresh the access token if it's within 60s of expiring, persists the rotated tokens back to the row, then sends `Authorization: Bearer <token>`. Refresh uses the token URL + client credentials registered in [lib/connector-oauth.ts](lib/connector-oauth.ts). |
 | `none` | No auth headers. |
 
-Outbound requests use a 55-second timeout. Responses are parsed as either JSON or Server-Sent Events (the SSE path is needed for some upstream servers that stream initialise events).
+The `EncryptedConfig` blob also carries an optional `extra: Record<string,string>` map. Catalog connections stash per-vendor routing info there (Salesforce `instanceUrl`, Zoho `apiDomain`, Supabase `projectRef`, etc.); adapters read it to pick the right per-org base URL.
+
+Outbound requests use a 55-second timeout. Responses are parsed as either JSON or Server-Sent Events. Outbound requests to our own loopback adapter URLs (`${OIDC_ISSUER}/api/upstream-mcp/...`) additionally carry an `x-mcpgw-internal` header set to `MCP_CONFIG_KEY` so the adapter route can reject any other caller.
 
 ### 7.3 Mock Mode
 
@@ -702,7 +714,7 @@ Outbound requests use a 55-second timeout. Responses are parsed as either JSON o
 - the project can be cloned, seeded, and demoed entirely offline;
 - automated tests don't need network egress.
 
-The five seeded connectors in [prisma/seed.ts](prisma/seed.ts) — **Jira Cloud**, **Zoho CRM**, **HubSpot**, **Salesforce**, **PostgreSQL** — all point at `mcp.example.com/*`.
+The five seeded connectors in [prisma/seed.ts](prisma/seed.ts) — **Jira Cloud**, **Zoho CRM**, **HubSpot**, **Salesforce**, **PostgreSQL** — all point at `mcp.example.com/*`. Seeded rows are independent of the in-app catalog; the catalog creates fresh rows backed by real adapters when an admin clicks through it.
 
 ### 7.4 Tool Discovery & Override
 
@@ -712,11 +724,104 @@ On the first `tools/list` against a connector, the upstream's tool list is cache
 
 | Route | Verbs | Purpose |
 |---|---|---|
-| [app/api/connections/route.ts](app/api/connections/route.ts) | GET, POST | List / create data sources. |
+| [app/api/connections/route.ts](app/api/connections/route.ts) | GET, POST | List / create data sources (custom MCP URL path). |
 | [app/api/connections/[id]/route.ts](app/api/connections/[id]/route.ts) | GET, PATCH, DELETE | Read / update / delete one. |
 | [app/api/connections/[id]/tools/route.ts](app/api/connections/[id]/tools/route.ts) | GET | List discovered tools. |
 | [app/api/connections/[id]/tools/[toolName]/route.ts](app/api/connections/[id]/tools/[toolName]/route.ts) | PATCH | Override tool level. |
 | [app/api/connections/[id]/tables/route.ts](app/api/connections/[id]/tables/route.ts) | GET | Probe upstream to list tables / objects (for the table-allowlist picker UI). |
+| [app/api/connections/oauth/[slug]/start/route.ts](app/api/connections/oauth/) | GET | PKCE OAuth start for catalog connectors — 302s the popup to the vendor's authorize endpoint. |
+| [app/api/connections/oauth/[slug]/callback/route.ts](app/api/connections/oauth/) | GET | OAuth callback. Returns an HTML page that `window.opener.postMessage`s the tokens back to the dialog and closes the popup. **Does not** create the DataSource itself. |
+| [app/api/connections/from-catalog/route.ts](app/api/connections/from-catalog/route.ts) | POST | Creates a catalog-backed DataSource from the dialog's submit body (name, accessToken, refreshToken?, advancedSettings). |
+| [app/api/upstream-mcp/[adapter]/[connectorId]/route.ts](app/api/upstream-mcp/) | POST | Generic in-process MCP server. Dispatches by adapter slug. Gated by `x-mcpgw-internal: ${MCP_CONFIG_KEY}` so it can only be invoked by the gateway's own proxy. |
+
+### 7.6 Connector Catalog & In-Process Adapters
+
+The catalog is a hardcoded constant in [lib/connector-catalog.ts](lib/connector-catalog.ts) — 14 entries today. Each entry has a `kind`:
+
+| Kind | Behaviour |
+|---|---|
+| `saas-adapter` | An in-process adapter under [lib/upstream-adapters/](lib/upstream-adapters/) translates a vendor's REST API to MCP JSON-RPC. The new DataSource gets `upstreamUrl = ${OIDC_ISSUER}/api/upstream-mcp/<adapter>/<connectorId>`. Used for HubSpot, Salesforce, Supabase, Zoho CRM. |
+| `db-adapter` | Reserved for in-process database adapters (Postgres / BigQuery / Snowflake / Databricks). Currently all four are `coming-soon` — same dispatcher pattern, different adapter implementations. |
+| `coming-soon` | Renders in the catalog grid (with a "Coming soon" badge) but the card is non-interactive. Used for `vertica`, `google-drive`, `google-sheets`, `onedrive`, `google-ads`, `meta-ads`. |
+
+#### 7.6.1 Catalog UI flow
+
+1. `Connections` page → **Add Connection** opens the chooser modal ([components/layouts/sidebar.tsx-style two-card chooser](app/(dashboard)/connections/new-connection-chooser.tsx)). One CTA goes to **Existing MCP URL** (the original form), the other to **Create connection**.
+2. **Create connection** routes to [app/(dashboard)/connections/new/catalog/](app/(dashboard)/connections/new/catalog/), which renders a grid of all 14 catalog cards. Clickable cards open the **Connect to <vendor>** dialog inline; coming-soon cards are disabled.
+3. The dialog ([connect-dialog.tsx](app/(dashboard)/connections/new/catalog/connect-dialog.tsx)) renders:
+   - **Connection name** (defaults to the vendor name).
+   - **Access token** — pasteable directly for PAT-friendly vendors (HubSpot Private Apps, Supabase `service_role` keys), AND/OR a **Sign In with <vendor>** button that opens an OAuth popup via [useOAuthPopup](lib/hooks/use-oauth-popup.ts).
+   - **Advanced Settings** — collapsible. Each catalog entry declares its own `advancedSettings: AdvancedSettingDef[]` schema; the dialog renders booleans / strings / selects generically. Examples: HubSpot's "Use custom objects", Salesforce's "Sandbox" + API version, Supabase's `projectRef`, Zoho's regional domain.
+4. **Continue** → POST [`/api/connections/from-catalog`](app/api/connections/from-catalog/route.ts) → DataSource is created with the right `upstreamUrl` and an encrypted `oauth`-or-`bearer` config blob.
+
+#### 7.6.2 OAuth popup flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Dialog as Connect dialog
+    participant Popup as OAuth popup window
+    participant Start as /api/connections/oauth/{slug}/start
+    participant Vendor as Vendor authorize/token
+    participant Callback as /api/connections/oauth/{slug}/callback
+    participant FromCat as /api/connections/from-catalog
+
+    Dialog->>Popup: window.open(slug)
+    Popup->>Start: GET (admin session)
+    Start->>Start: generate PKCE verifier + state, set cookie
+    Start-->>Popup: 302 to Vendor authorize
+    Popup->>Vendor: redirect with code_challenge + state
+    Vendor-->>Popup: redirect to callback with code + state
+    Popup->>Callback: GET
+    Callback->>Callback: verify cookie state, exchange code for tokens
+    Callback-->>Popup: HTML with postMessage(tokens)
+    Popup-->>Dialog: window.postMessage({accessToken,...})
+    Note over Popup: window.close()
+    Dialog->>Dialog: fill access-token field, capture extras
+    Dialog->>FromCat: POST {slug, name, accessToken, refreshToken?, advancedSettings}
+    FromCat-->>Dialog: 201 {id}
+    Dialog->>Dialog: route to /connections/{id}
+```
+
+Key safety properties of this flow:
+- The popup is same-origin throughout (vendor only sees the popup window, never our app's main tab) — the `postMessage` listener filters by `event.origin === window.location.origin`.
+- The OAuth state + PKCE verifier are kept in an `HttpOnly` SameSite=Lax cookie scoped to `/api/connections/oauth`; the callback rejects on mismatch.
+- The callback never directly creates a DataSource — the dialog has to explicitly call `from-catalog`. This means re-OAuthing doesn't leave dead rows, and the same dialog supports OAuth and PAT input symmetrically.
+- For vendors that don't support OAuth (Supabase as configured), or where credentials aren't set, the "Sign In with <vendor>" button is disabled but the dialog still works via paste.
+
+#### 7.6.3 In-process adapter contract
+
+Every adapter under [lib/upstream-adapters/](lib/upstream-adapters/) implements the shared interface in [types.ts](lib/upstream-adapters/types.ts):
+
+```ts
+type UpstreamAdapter = {
+  name: string;
+  listTools(ctx: AdapterContext): McpTool[] | Promise<McpTool[]>;
+  callTool(
+    ctx: AdapterContext,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<McpToolResult>;
+};
+type AdapterContext = {
+  connectorId: string;
+  cfg: EncryptedConfig;       // includes extra: Record<string,string>
+  accessToken?: string;        // already-refreshed if OAuth
+};
+```
+
+The generic route at [app/api/upstream-mcp/[adapter]/[connectorId]/route.ts](app/api/upstream-mcp/) handles MCP envelope concerns (JSON-RPC framing, `initialize` / `notifications/*` / `ping` / `tools/list` / `tools/call` dispatch, OAuth refresh) so adapters only need to declare their tool catalog and run individual tool calls. Adapters shipped today: `hubspot`, `salesforce`, `supabase`, `zoho-crm`.
+
+#### 7.6.4 OAuth client credentials
+
+Per-vendor OAuth apps must be registered separately on each vendor's developer console with redirect URI `${OIDC_ISSUER}/api/connections/oauth/<slug>/callback`. The resulting client credentials are read from env vars:
+
+- `CONNECTOR_OAUTH_<SLUG_UPPER>_CLIENT_ID`
+- `CONNECTOR_OAUTH_<SLUG_UPPER>_CLIENT_SECRET`
+
+where `<SLUG_UPPER>` is the catalog slug uppercased with hyphens turned into underscores (`zoho-crm` → `ZOHO_CRM`). Optional overrides `_AUTHORIZE_URL`, `_TOKEN_URL`, `_SCOPES` let admins point Salesforce at sandboxes or Zoho at non-`.com` regions without code changes.
+
+If the env vars are missing, the catalog card still renders, the OAuth button is disabled, and the dialog falls back to the PAT-paste path (for vendors that support it).
 
 ---
 
@@ -808,6 +913,19 @@ Actor (`actorId`) and target user (`targetUserId`) are both `SetNull` on delete 
 
 This protects connector credentials (API tokens, OAuth refresh tokens, custom auth headers) when the database is compromised but the env vars aren't.
 
+The encrypted payload (the `EncryptedConfig` type in [lib/mcp/upstream-client.ts](lib/mcp/upstream-client.ts)) supports four variants:
+
+| `authScheme` | Fields | Used by |
+|---|---|---|
+| `"bearer"` | `apiKey` | Custom MCP URL with a static token; catalog-created connections that store a pasted PAT (HubSpot Private App, Supabase service_role key, etc.). |
+| `"customHeaders"` | `customHeaders: Record<string,string>` | Custom MCP URL with vendor-specific headers. |
+| `"oauth"` | `oauth: {providerKey, accessToken, refreshToken?, expiresAt?}` | Catalog connections completed via OAuth. The upstream client refreshes the access token transparently 60s before expiry (see [`ensureFreshOAuthToken`](lib/mcp/upstream-client.ts)). |
+| `"none"` | — | No auth headers added. |
+
+All variants also carry an optional `extra: Record<string,string>` map. Catalog connections persist per-vendor routing info there (Salesforce `instanceUrl`, Zoho `apiDomain`, Supabase `projectRef`) so adapters can read it without hitting another env var.
+
+`MCP_CONFIG_KEY` doubles as the secret for the `x-mcpgw-internal` header on loopback adapter calls (see [§7.6.3](#763-in-process-adapter-contract)), so a single env var protects both at-rest credentials and the internal-only adapter route.
+
 ### 10.2 MCP Token Hashing
 
 When the application issues opaque tokens directly (outside the OAuth provider), [lib/crypto.ts](lib/crypto.ts) generates 32 random bytes, base64url-encodes them, and stores **only the SHA-256 hash** of the token. The plaintext is shown to the user once and never persisted. (The OAuth provider's own access/refresh tokens are stored via the OIDC adapter, separately.)
@@ -845,7 +963,7 @@ All under [app/(dashboard)/](app/(dashboard)/). The route group guard in [app/(d
 | Page | Purpose | Key files |
 |---|---|---|
 | Dashboard (`/`) | Overview cards (users, connectors, 24h queries, 24h errors), 7-day query chart, top users, queries-by-connector. | [app/(dashboard)/page.tsx](app/(dashboard)/page.tsx), [app/(dashboard)/dashboard-chart.tsx](app/(dashboard)/dashboard-chart.tsx), [lib/dashboard-metrics.ts](lib/dashboard-metrics.ts) |
-| Connections (`/connections`) | List, create, edit data sources; per-connector tool list with level overrides. | [app/(dashboard)/connections/](app/(dashboard)/connections/) |
+| Connections (`/connections`) | List, create, edit data sources. **Add Connection** opens a chooser modal: "Existing MCP URL" (paste any MCP URL + headers) or "Create connection" (catalog-based flow, see [§7.6](#76-connector-catalog--in-process-adapters)). Per-connector tool list with level overrides. | [app/(dashboard)/connections/](app/(dashboard)/connections/) |
 | Users (`/users`) | List users; per-user detail with role, password reset, direct grants, MCP URL rotation. | [app/(dashboard)/users/](app/(dashboard)/users/) |
 | Workspaces (`/workspaces`) | CRUD workspaces, members, attached data sources, table allowlists; rotate workspace MCP URL. | [app/(dashboard)/workspaces/](app/(dashboard)/workspaces/) |
 | Permissions (`/permissions`) | Matrix view (users × connectors) and breakdowns by-connection / by-user; inline editor + bulk actions. | [app/(dashboard)/permissions/](app/(dashboard)/permissions/) |
@@ -1052,14 +1170,38 @@ Mirrors [.env.example](.env.example) and adds usage citations.
 | `AUDIT_RETENTION_DAYS` | `90` (clamped to [1, 3650]) | Days of `AuditLog` retained by the daily prune cron. |
 | `NODE_ENV` | set by Next.js / Node | Drives production safety checks in [lib/crypto.ts](lib/crypto.ts) and [prisma/seed.ts](prisma/seed.ts). |
 
+### 16.3 Connector-Catalog OAuth (optional, per vendor)
+
+For each catalog connector you want to enable the OAuth path on, register an OAuth app with the vendor (redirect URI: `${OIDC_ISSUER}/api/connections/oauth/<slug>/callback`) and set the matching pair of env vars. Without them, the catalog card still renders but the "Sign In with <vendor>" button is disabled and the dialog falls back to the paste-a-PAT path (for vendors that support PAT).
+
+| Variable | Used by | Notes |
+|---|---|---|
+| `CONNECTOR_OAUTH_HUBSPOT_CLIENT_ID` / `_CLIENT_SECRET` | HubSpot | OAuth or Private App. HubSpot Private App tokens can be pasted without OAuth. |
+| `CONNECTOR_OAUTH_SALESFORCE_CLIENT_ID` / `_CLIENT_SECRET` | Salesforce | OAuth-only. Override `_AUTHORIZE_URL` and `_TOKEN_URL` to `test.salesforce.com` for sandboxes. |
+| `CONNECTOR_OAUTH_ZOHO_CRM_CLIENT_ID` / `_CLIENT_SECRET` | Zoho CRM | OAuth-only. Override `_AUTHORIZE_URL` and `_TOKEN_URL` for non-`.com` Zoho regions (`accounts.zoho.eu`, etc.). |
+| `CONNECTOR_OAUTH_SUPABASE_CLIENT_ID` / `_CLIENT_SECRET` | Supabase | Optional — the default Supabase path uses a pasted `service_role` key. |
+| `CONNECTOR_OAUTH_<SLUG>_AUTHORIZE_URL` / `_TOKEN_URL` / `_SCOPES` | any | Per-vendor URL/scope overrides without code changes. |
+
+`<SLUG>` is the catalog slug uppercased with hyphens turned into underscores (`zoho-crm` → `ZOHO_CRM`).
+
 ---
 
 ## 17. Operational Notes
 
 ### 17.1 Adding a New MCP Connector
 
+Two paths, depending on what kind of source you're plugging in:
+
+**Path A — Catalog vendor** (HubSpot / Salesforce / Supabase / Zoho CRM today)
+1. (Optional, OAuth only) Register an OAuth app on the vendor's developer console. Redirect URI: `${OIDC_ISSUER}/api/connections/oauth/<slug>/callback`. Set `CONNECTOR_OAUTH_<SLUG>_CLIENT_ID` / `_CLIENT_SECRET` in Vercel.
+2. `/connections` → **Add Connection** → **Create connection** → pick the vendor card.
+3. In the dialog: set a connection name, click **Sign In with <vendor>** (or paste a PAT), adjust advanced settings, click **Continue**.
+4. The DataSource is created with `upstreamUrl = ${OIDC_ISSUER}/api/upstream-mcp/<adapter>/<id>` and a libsodium-encrypted token blob. The adapter handles tool listing and dispatch on every JSON-RPC call.
+5. Grant access via Workspace memberships or direct `UserDataSourceAccess` rows, set `allowedTables` if needed.
+
+**Path B — Custom MCP URL** (anything already running as an MCP server)
 1. **Pick a slug**. It becomes the tool namespace (`<slug>__<tool>`) and must be stable forever — changing it breaks existing tool references.
-2. **Create the `DataSource` row** via the admin UI (`/connections` → New) or by seed:
+2. **Create the `DataSource` row** via the admin UI (`/connections` → **Add Connection** → **Existing MCP URL**) or by seed:
    - `name`, `slug`, `type`, `upstreamUrl`.
    - Pick an auth scheme: `bearer` (one `apiKey`), `customHeaders` (free-form map), or `none`. The UI encrypts the config via [lib/crypto.ts](lib/crypto.ts) before insert.
 3. **First `tools/list`** — any authorised user who hits the proxy now triggers discovery. New tools are persisted to `ToolPermission` with heuristic classification.
@@ -1069,6 +1211,12 @@ Mirrors [.env.example](.env.example) and adds usage citations.
    - Add `UserDataSourceAccess` rows for specific users.
 6. **Set `allowedTables`** if you want table-level restrictions. Leave `null` for unrestricted.
 7. **Probe** with [scripts/probe-upstream.ts](scripts/probe-upstream.ts) to verify connectivity before announcing the connector to users.
+
+**Path C — Adding a new catalog adapter** (developer task; not in the admin UI)
+1. Add an entry to `CONNECTOR_CATALOG` in [lib/connector-catalog.ts](lib/connector-catalog.ts) with `kind: "saas-adapter"` (or `"db-adapter"`).
+2. Write the adapter file under [lib/upstream-adapters/](lib/upstream-adapters/) implementing the `UpstreamAdapter` interface in [types.ts](lib/upstream-adapters/types.ts).
+3. Register it in the `ADAPTERS` map in [app/api/upstream-mcp/[adapter]/[connectorId]/route.ts](app/api/upstream-mcp/).
+4. If OAuth: add a provider entry to `PROVIDERS` in [lib/connector-oauth.ts](lib/connector-oauth.ts) and document the env-var names in [.env.example](.env.example).
 
 ### 17.2 Troubleshooting
 
@@ -1106,8 +1254,10 @@ Mirrors [.env.example](.env.example) and adds usage citations.
 | AdminEvent retention | Not pruned by the audit cron. | Extend the cron, or accept unbounded growth (low cardinality). |
 | CSP / CSRF | No explicit middleware. Relies on Auth.js's built-in CSRF for its own routes. | Add a `proxy` (Next 16 renaming of middleware) with strict CSP + CSRF for non-Auth.js routes. |
 | JWKS rotation | Static keys via env var; no runtime rotation. | Implement key-rolling in [lib/oidc/jwks.ts](lib/oidc/jwks.ts); be aware it invalidates all issued tokens unless you publish both old and new keys for a transition period. |
-| Demo data | All connectors point at `mcp.example.com/*` — mock-only. | Replace `upstreamUrl` + `configEncrypted` for each connector to go live against real upstreams. |
+| Demo data | All seeded connectors point at `mcp.example.com/*` — mock-only. The connector catalog ([§7.6](#76-connector-catalog--in-process-adapters)) is the real path for going live. | Use the catalog flow at `/connections/new/catalog` to create real connections; replace seed rows only if you specifically want the demo connectors to hit real endpoints. |
+| Catalog adapters shipped | 4 active (HubSpot, Salesforce, Supabase, Zoho CRM) + 10 coming-soon cards (Postgres / BigQuery / Snowflake / Databricks / Vertica / Google Drive / Sheets / OneDrive / Google Ads / Meta Ads). | DB adapters next — same dispatcher pattern, use the matching npm SDK per vendor. |
 | Connector retry | No retry/backoff on upstream failures (just 55s timeout). | Wrap [lib/mcp/upstream-client.ts](lib/mcp/upstream-client.ts) with `p-retry` or similar. |
+| Catalog OAuth scaling | One OAuth client per vendor per deploy (env vars), so all gateway admins share the same vendor app. | Per-tenant OAuth clients via a DB-backed config table once multi-tenant scope is in scope. |
 | Workspace invites | No invitation flow yet — admins create users directly. | Add an invite/accept handshake. |
 | Logging | Audit log only; no application logging pipeline. | Add structured logging (pino?) and ship to a sink. |
 
