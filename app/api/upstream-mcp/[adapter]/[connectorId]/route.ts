@@ -14,6 +14,9 @@ import {
 } from "@/lib/mcp/upstream-client";
 import type { UpstreamAdapter } from "@/lib/upstream-adapters/types";
 import { zohoCrmAdapter } from "@/lib/upstream-adapters/zoho-crm";
+import { hubspotAdapter } from "@/lib/upstream-adapters/hubspot";
+import { salesforceAdapter } from "@/lib/upstream-adapters/salesforce";
+import { supabaseAdapter } from "@/lib/upstream-adapters/supabase";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,6 +39,9 @@ export const maxDuration = 60;
 
 const ADAPTERS: Record<string, UpstreamAdapter> = {
   "zoho-crm": zohoCrmAdapter,
+  hubspot: hubspotAdapter,
+  salesforce: salesforceAdapter,
+  supabase: supabaseAdapter,
 };
 
 function rpcSuccess(id: JsonRpcId, result: unknown): JsonRpcResponse {
