@@ -49,7 +49,6 @@ export function LoginForm() {
               type="email"
               autoComplete="email"
               required
-              defaultValue="admin@devart.com"
               placeholder="you@devart.com"
             />
           </div>
@@ -61,17 +60,12 @@ export function LoginForm() {
               type="password"
               autoComplete="current-password"
               required
-              defaultValue="admin123"
             />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <Button type="submit" className="w-full" disabled={pending}>
             {pending ? "Signing in…" : "Sign in"}
           </Button>
-          <p className="pt-2 text-xs text-muted-foreground">
-            Demo users: admin@devart.com / admin123 · alice@devart.com / demo123 · bob@devart.com /
-            demo123 · carol@devart.com / demo123
-          </p>
         </form>
       </CardContent>
     </Card>
