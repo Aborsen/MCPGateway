@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { hasAnyDashboardAccess } from "@/lib/rbac";
 import { Sidebar } from "@/components/layouts/sidebar";
 import { SignOutButton } from "./sign-out-button";
 
@@ -9,10 +10,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  // USER role has no dashboard access — they only authenticate (Auth.js +
-  // OAuth) to use their MCP URL from Claude Code. Render a static "no
-  // access" page instead of the dashboard chrome.
-  if (session.user.role === "USER") {
+  // USER role (and any unknown role) has no dashboard access — they only
+  // authenticate (Auth.js + OAuth) to use the MCP endpoint from Claude Code.
+  // Render a static "no access" page instead of the dashboard chrome.
+  if (!hasAnyDashboardAccess(session.user.role)) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-6 text-center">
         <Image src="/logo.png" alt="MCP Gateway" width={48} height={48} className="rounded" priority />

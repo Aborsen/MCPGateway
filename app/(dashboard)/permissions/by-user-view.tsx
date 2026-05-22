@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { ROLES, ROLE_LABEL, badgeVariantFor, labelFor } from "@/lib/rbac";
 import { BulkBar } from "./bulk-bar";
 import { InlinePermRow } from "./inline-perm-row";
 import {
@@ -113,8 +114,11 @@ export function ByUserView({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All roles</SelectItem>
-                <SelectItem value="ADMIN">Admin</SelectItem>
-                <SelectItem value="USER">User</SelectItem>
+                {ROLES.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {ROLE_LABEL[r]}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Select value={accessFilter} onValueChange={setAccessFilter}>
@@ -227,9 +231,9 @@ function UserListItem({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 text-sm font-medium">
           <span className="truncate">{user.name}</span>
-          {user.role === "ADMIN" && (
-            <Badge variant="default" className="h-4 text-[10px]">
-              admin
+          {user.role !== "USER" && (
+            <Badge variant={badgeVariantFor(user.role)} className="h-4 text-[10px]">
+              {labelFor(user.role).toLowerCase()}
             </Badge>
           )}
         </div>

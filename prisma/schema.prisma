@@ -19,6 +19,7 @@ model User {
   mcpUid       String?   @unique
   createdAt    DateTime  @default(now())
   deletedAt    DateTime?
+  suspendedAt  DateTime?
 
   workspaceUsers WorkspaceUser[]
   auditLogs      AuditLog[]

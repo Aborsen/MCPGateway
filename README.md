@@ -16,11 +16,16 @@ Built with Next.js 16 + Prisma 7 + Postgres + Auth.js v5 + `oidc-provider`. Depl
 
 ## Roles
 
+Role matrix lives in [lib/rbac.ts](lib/rbac.ts). API routes gate with `requireView(resource)` / `requireEdit(resource)` / `requireAdmin()` / `requireOwner()` from [lib/auth.ts](lib/auth.ts); top-level dashboard pages gate with `gateView(resource)`.
+
 | Role | Capability |
 |---|---|
-| `OWNER` | Tenant root. Only role allowed to delete users and reassign roles. Gated by `requireOwner()` in [lib/auth.ts](lib/auth.ts). |
-| `ADMIN` | Manages connections, workspaces, permissions, and audit. Gated by `requireAdmin()`. |
-| `USER` | No admin UI access. Used only as the OAuth account on the MCP endpoint. |
+| `OWNER` | Tenant root. Only role allowed to delete users and reassign roles. |
+| `ADMIN` | Manages connections, workspaces, users, permissions, audit, settings. |
+| `EDITOR` | Views Dashboard, Connections, Audit, Settings. Can connect/delete MCP servers. |
+| `STAFF` | View-only Dashboard and Workspaces. |
+| `GUEST` | View-only Dashboard, Connections, Workspaces. |
+| `USER` | No admin UI access. Used as the OAuth account on the MCP endpoint. Suspending a user (`User.suspendedAt`) blocks sign-in and MCP usage for any role. |
 
 ## Quick start (local)
 
@@ -119,10 +124,10 @@ The repo is set up to deploy cleanly with `vercel.json` declaring the audit-prun
 
 ### MCP endpoints
 
-- **[app/api/mcp/u/[uid]/route.ts](app/api/mcp/u/[uid]/route.ts)** — per-user JSON-RPC endpoint. Aggregates the union of every workspace membership + every direct grant for the OAuth-authenticated user.
-- **[app/api/mcp/w/[uid]/route.ts](app/api/mcp/w/[uid]/route.ts)** — per-workspace endpoint. Same JSON-RPC dispatcher but the permission scope is *only* that workspace's connections; direct user grants are intentionally ignored so the workspace URL stays scoped to the workspace.
+- **[app/api/mcp/route.ts](app/api/mcp/route.ts)** — single generic JSON-RPC endpoint. Same URL for every user; the OAuth-authenticated account is authoritative for permissions and aggregates the union of every workspace membership + every direct grant.
+- **[app/api/mcp/w/[uid]/route.ts](app/api/mcp/w/[uid]/route.ts)** — per-workspace endpoint. Same JSON-RPC dispatcher but the permission scope is *only* that workspace's connections; direct user grants are intentionally ignored so the workspace URL stays scoped to the workspace. The `uid` URL segment is a routing handle only — the OAuth-authenticated account still gates access.
 
-Both routes handle `initialize`, `tools/list`, `tools/call`, `ping`, and the `notifications/*` lifecycle. Tools are namespaced as `<slug>__<tool>` (e.g. `hubspot__list_contacts`). The `uid` URL segment is a routing handle only — the OAuth-authenticated account is authoritative for permissions. The `initialize` response includes a `serverInfo` block with `title` and `icons` for SEP-973 / 2025-11-25 forward-compat.
+Both routes handle `initialize`, `tools/list`, `tools/call`, `ping`, and the `notifications/*` lifecycle. Tools are namespaced as `<slug>__<tool>` (e.g. `hubspot__list_contacts`). The `initialize` response includes a `serverInfo` block with `title` and `icons` for SEP-973 / 2025-11-25 forward-compat.
 
 ### Auth
 

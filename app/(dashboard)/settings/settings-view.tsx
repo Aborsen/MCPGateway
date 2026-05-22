@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { badgeVariantFor, labelFor } from "@/lib/rbac";
 
 type Props = {
   initialName: string;
@@ -77,7 +78,7 @@ export function SettingsView({ initialName, email, role }: Props) {
               <div className="space-y-2">
                 <Label>Role</Label>
                 <div>
-                  <Badge variant={role === "ADMIN" ? "default" : "secondary"}>{role}</Badge>
+                  <Badge variant={badgeVariantFor(role)}>{labelFor(role)}</Badge>
                 </div>
               </div>
               {nameMsg && (

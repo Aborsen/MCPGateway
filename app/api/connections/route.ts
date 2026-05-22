@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireView, requireEdit } from "@/lib/auth";
 import { encryptJson } from "@/lib/crypto";
 import type { EncryptedConfig } from "@/lib/mcp/upstream-client";
 
@@ -54,7 +54,7 @@ async function uniqueSlug(base: string): Promise<string> {
 }
 
 export async function GET() {
-  const auth = await requireAdmin();
+  const auth = await requireView("connections");
   if (auth instanceof NextResponse) return auth;
   const sources = await prisma.dataSource.findMany({
     orderBy: { createdAt: "asc" },
@@ -83,7 +83,7 @@ function buildEncryptedConfig(input: {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireAdmin();
+  const auth = await requireEdit("connections");
   if (auth instanceof NextResponse) return auth;
   const body = await request.json();
   const parsed = CreateSchema.safeParse(body);

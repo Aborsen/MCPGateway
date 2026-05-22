@@ -4,11 +4,13 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { requireAdmin, requireOwner } from "@/lib/auth";
 import { writeAdminEvent } from "@/lib/admin-events";
+import { ROLES } from "@/lib/rbac";
 
 const UpdateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
-  role: z.enum(["OWNER", "ADMIN", "USER"]).optional(),
+  role: z.enum(ROLES as unknown as [string, ...string[]]).optional(),
   password: z.string().min(6).optional(),
+  suspended: z.boolean().optional(),
 });
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -24,7 +26,7 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   }
   const before = await prisma.user.findUnique({
     where: { id },
-    select: { email: true, name: true, role: true },
+    select: { email: true, name: true, role: true, suspendedAt: true },
   });
   if (!before) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -47,6 +49,9 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   if (parsed.data.name) update.name = parsed.data.name;
   if (parsed.data.role) update.role = parsed.data.role;
   if (parsed.data.password) update.passwordHash = await bcrypt.hash(parsed.data.password, 10);
+  if (parsed.data.suspended !== undefined) {
+    update.suspendedAt = parsed.data.suspended ? new Date() : null;
+  }
   const updated = await prisma.user.update({ where: { id }, data: update });
 
   const changes: Record<string, { from: unknown; to: unknown }> = {};
@@ -54,6 +59,8 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
     changes.name = { from: before.name, to: parsed.data.name };
   if (parsed.data.role && parsed.data.role !== before.role)
     changes.role = { from: before.role, to: parsed.data.role };
+  if (parsed.data.suspended !== undefined && !!before.suspendedAt !== parsed.data.suspended)
+    changes.suspended = { from: !!before.suspendedAt, to: parsed.data.suspended };
 
   if (parsed.data.password) {
     await writeAdminEvent({
@@ -74,6 +81,16 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
       targetId: id,
       targetLabel: before.email,
       details: changes.role,
+    });
+  }
+  if (changes.suspended) {
+    await writeAdminEvent({
+      actorId: session.user.id,
+      targetUserId: id,
+      eventType: parsed.data.suspended ? "USER_SUSPENDED" : "USER_UNSUSPENDED",
+      targetType: "user",
+      targetId: id,
+      targetLabel: before.email,
     });
   }
   if (Object.keys(changes).length > 0 || (!parsed.data.password && !changes.role)) {

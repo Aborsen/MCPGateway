@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import crypto from "node:crypto";
-import { requireAdmin } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { findCatalogEntry, isCatalogEntryReady } from "@/lib/connector-catalog";
 import {
   getOAuthCredentials,
@@ -48,7 +48,7 @@ function challengeFor(verifier: string): string {
 }
 
 export async function GET(_request: Request, { params }: { params: Promise<{ slug: string }> }) {
-  const auth = await requireAdmin();
+  const auth = await requireEdit("connections");
   if (auth instanceof NextResponse) return auth;
 
   const { slug } = await params;

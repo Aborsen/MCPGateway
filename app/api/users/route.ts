@@ -4,12 +4,13 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 import { writeAdminEvent } from "@/lib/admin-events";
+import { ROLES } from "@/lib/rbac";
 
 const CreateSchema = z.object({
   email: z.string().email(),
   name: z.string().min(1).max(100),
   password: z.string().min(6),
-  role: z.enum(["OWNER", "ADMIN", "USER"]).default("USER"),
+  role: z.enum(ROLES as unknown as [string, ...string[]]).default("USER"),
 });
 
 export async function GET() {

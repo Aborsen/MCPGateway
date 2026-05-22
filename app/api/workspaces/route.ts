@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireView } from "@/lib/auth";
 
 const CreateSchema = z.object({
   name: z.string().min(1).max(100),
@@ -9,7 +9,7 @@ const CreateSchema = z.object({
 });
 
 export async function GET() {
-  const auth = await requireAdmin();
+  const auth = await requireView("workspaces");
   if (auth instanceof NextResponse) return auth;
   const workspaces = await prisma.workspace.findMany({
     where: { deletedAt: null },

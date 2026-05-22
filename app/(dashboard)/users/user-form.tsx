@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ROLES, ROLE_LABEL } from "@/lib/rbac";
 
 export type User = {
   id: string;
@@ -26,7 +27,9 @@ export type User = {
   name: string;
   role: string;
   workspaceCount: number;
-  hasMcpUrl: boolean;
+  workspaceNames: string[];
+  mcpStatus: "active" | "inactive";
+  suspended: boolean;
   createdAt: string;
 };
 
@@ -132,11 +135,11 @@ export function UserFormDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="USER">User</SelectItem>
-                <SelectItem value="ADMIN">Admin</SelectItem>
-                {viewerRole === "OWNER" && (
-                  <SelectItem value="OWNER">Owner</SelectItem>
-                )}
+                {ROLES.filter((r) => r !== "OWNER" || viewerRole === "OWNER").map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {ROLE_LABEL[r]}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { encryptJson } from "@/lib/crypto";
 import type { EncryptedConfig } from "@/lib/mcp/upstream-client";
 
@@ -27,7 +27,7 @@ const UpdateSchema = z.object({
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: RouteCtx) {
-  const auth = await requireAdmin();
+  const auth = await requireEdit("connections");
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   const body = await request.json();
@@ -73,7 +73,7 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
 }
 
 export async function DELETE(_request: Request, { params }: RouteCtx) {
-  const auth = await requireAdmin();
+  const auth = await requireEdit("connections");
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   await prisma.dataSource.delete({ where: { id } });

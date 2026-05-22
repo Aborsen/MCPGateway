@@ -1,10 +1,12 @@
 import NextAuth from "next-auth";
 import type { Session } from "next-auth";
 import { NextResponse } from "next/server";
+import { notFound, redirect } from "next/navigation";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 import { writeAdminEvent } from "./admin-events";
+import { canView, canEdit, type Resource } from "./rbac";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   session: { strategy: "jwt" },
@@ -22,6 +24,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           where: { email: String(credentials.email) },
         });
         if (!user || user.deletedAt) return null;
+        if (user.suspendedAt) return null;
         const ok = await bcrypt.compare(String(credentials.password), user.passwordHash);
         if (!ok) return null;
         return {
@@ -117,5 +120,39 @@ export async function requireOwner(): Promise<Session | NextResponse> {
   if (session.user.role !== "OWNER") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
+  return session;
+}
+
+// Resource-scoped gates. Use these for endpoints that need view or edit
+// access to a specific top-level area rather than blanket admin.
+export async function requireView(resource: Resource): Promise<Session | NextResponse> {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (!canView(session.user.role, resource)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  return session;
+}
+
+export async function requireEdit(resource: Resource): Promise<Session | NextResponse> {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (!canEdit(session.user.role, resource)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  return session;
+}
+
+// Server-component gate. Redirects unauthenticated users to /login and
+// 404s users without view access to the resource (so deep-links can't bypass
+// the sidebar filter). Use in top-level dashboard pages.
+export async function gateView(resource: Resource): Promise<Session> {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  if (!canView(session.user.role, resource)) notFound();
   return session;
 }

@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/db";
+import { gateView } from "@/lib/auth";
 import { AuditView } from "./audit-view";
 
 export const dynamic = "force-dynamic";
 
 export default async function AuditPage() {
+  await gateView("audit");
   const [users, dataSources] = await Promise.all([
     prisma.user.findMany({
       where: { deletedAt: null },

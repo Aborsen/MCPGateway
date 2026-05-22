@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, ExternalLink } from "lucide-react";
 import { prisma } from "@/lib/db";
+import { gateView } from "@/lib/auth";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { parseAllowedTables, parsePermissions } from "@/lib/json";
@@ -14,6 +15,7 @@ export const dynamic = "force-dynamic";
 type PageProps = { params: Promise<{ id: string }> };
 
 export default async function ConnectionDetailPage({ params }: PageProps) {
+  await gateView("connections");
   const { id } = await params;
   const ds = await prisma.dataSource.findUnique({
     where: { id },

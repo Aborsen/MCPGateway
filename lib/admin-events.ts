@@ -7,10 +7,13 @@ export type AdminEventType =
   | "USER_CREATED"
   | "USER_UPDATED"
   | "USER_DELETED"
+  | "USER_SUSPENDED"
+  | "USER_UNSUSPENDED"
   | "USER_PASSWORD_CHANGED"
   | "USER_ROLE_CHANGED"
   | "USER_DATA_SOURCE_ACCESS_CHANGED"
   | "USER_DATA_SOURCE_ACCESS_REVOKED"
+  | "WORKSPACE_USER_REMOVED"
   | "TOOL_LEVEL_OVERRIDDEN";
 
 export type AdminEventInput = {
@@ -47,9 +50,12 @@ export const EVENT_LABELS: Record<AdminEventType, string> = {
   USER_CREATED: "User Created",
   USER_UPDATED: "User Updated",
   USER_DELETED: "User Removed",
+  USER_SUSPENDED: "User Suspended",
+  USER_UNSUSPENDED: "User Unsuspended",
   USER_PASSWORD_CHANGED: "Password Changed",
   USER_ROLE_CHANGED: "Role Changed",
   USER_DATA_SOURCE_ACCESS_CHANGED: "Direct Grant Changed",
   USER_DATA_SOURCE_ACCESS_REVOKED: "Direct Grant Revoked",
+  WORKSPACE_USER_REMOVED: "Workspace Member Removed",
   TOOL_LEVEL_OVERRIDDEN: "Tool Level Overridden",
 };

@@ -23,21 +23,23 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { canView, type Resource } from "@/lib/rbac";
 
 type NavItem = {
   href: string;
   label: string;
   icon: typeof LayoutDashboard;
+  resource: Resource;
   exact?: boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { href: "/connections", label: "Connections", icon: Plug },
-  { href: "/users", label: "Users", icon: Users },
-  { href: "/workspaces", label: "Workspaces", icon: FolderTree },
-  { href: "/permissions", label: "Permissions", icon: ShieldCheck },
-  { href: "/audit", label: "Audit", icon: FileText },
+  { href: "/", label: "Dashboard", icon: LayoutDashboard, resource: "dashboard", exact: true },
+  { href: "/connections", label: "Connections", icon: Plug, resource: "connections" },
+  { href: "/users", label: "Users", icon: Users, resource: "users" },
+  { href: "/workspaces", label: "Workspaces", icon: FolderTree, resource: "workspaces" },
+  { href: "/permissions", label: "Permissions", icon: ShieldCheck, resource: "permissions" },
+  { href: "/audit", label: "Audit", icon: FileText, resource: "audit" },
 ];
 
 function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
@@ -138,7 +140,7 @@ export function Sidebar({ user }: { user: { name: string; email: string; role: s
       </Link>
 
       <nav className="flex-1 px-2 py-2 space-y-0.5">
-        {NAV_ITEMS.map((item) => (
+        {NAV_ITEMS.filter((item) => canView(user.role, item.resource)).map((item) => (
           <NavLink key={item.href} item={item} pathname={pathname} />
         ))}
       </nav>

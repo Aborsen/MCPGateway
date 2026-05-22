@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/db";
+import { gateView } from "@/lib/auth";
 import { WorkspacesList } from "./workspaces-list";
 
 export const dynamic = "force-dynamic";
 
 export default async function WorkspacesPage() {
+  await gateView("workspaces");
   const workspaces = await prisma.workspace.findMany({
     where: { deletedAt: null },
     orderBy: { createdAt: "asc" },

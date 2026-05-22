@@ -1,19 +1,28 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { headers } from "next/headers";
 import { ChevronLeft } from "lucide-react";
 import { prisma } from "@/lib/db";
+import { auth, gateView } from "@/lib/auth";
 import { PageHeader } from "@/components/layouts/page-header";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { parsePermissions } from "@/lib/json";
-import { UserMcpUrl } from "./user-tokens";
+import { UserMcpUrl } from "./user-mcp-url";
+import { UserAccountCard } from "./user-account-card";
+import { UserWorkspacesCard } from "./user-workspaces-card";
+import { UserInfoCard } from "./user-info-card";
+import { UserActivityCard } from "./user-activity-card";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = { params: Promise<{ id: string }> };
 
 export default async function UserDetailPage({ params }: PageProps) {
+  await gateView("users");
   const { id } = await params;
+  const session = await auth();
+  const viewerRole = session?.user?.role ?? "USER";
+
   const user = await prisma.user.findFirst({
     where: { id, deletedAt: null },
     include: {
@@ -29,6 +38,65 @@ export default async function UserDetailPage({ params }: PageProps) {
     },
   });
   if (!user) notFound();
+
+  const since24h = new Date(Date.now() - 86400_000);
+  const since7d = new Date(Date.now() - 7 * 86400_000);
+
+  const [c24, c7, errors7, lastAudit, lastLogin, topTools, recent] = await Promise.all([
+    prisma.auditLog.count({ where: { userId: id, createdAt: { gte: since24h } } }),
+    prisma.auditLog.count({ where: { userId: id, createdAt: { gte: since7d } } }),
+    prisma.auditLog.count({
+      where: { userId: id, createdAt: { gte: since7d }, status: "ERROR" },
+    }),
+    prisma.auditLog.findFirst({
+      where: { userId: id },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    }),
+    prisma.adminEvent.findFirst({
+      where: { eventType: "USER_LOGIN", actorId: id },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    }),
+    prisma.auditLog.groupBy({
+      by: ["toolName"],
+      where: { userId: id, toolName: { not: null }, createdAt: { gte: since7d } },
+      _count: { toolName: true },
+      orderBy: { _count: { toolName: "desc" } },
+      take: 5,
+    }),
+    prisma.auditLog.findMany({
+      where: { userId: id },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        method: true,
+        toolName: true,
+        status: true,
+        durationMs: true,
+        createdAt: true,
+        errorMessage: true,
+      },
+    }),
+  ]);
+
+  const h = await headers();
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
+  const mcpUrl = `${proto}://${host}/api/mcp`;
+
+  const workspaces = user.workspaceUsers.map((wu) => ({
+    membershipId: wu.id,
+    workspaceId: wu.workspaceId,
+    workspaceName: wu.workspace.name,
+    permissions: parsePermissions(wu.permissions),
+    connectors: wu.workspace.dataSources.map((wds) => ({
+      id: wds.id,
+      name: wds.dataSource.name,
+      slug: wds.dataSource.slug,
+    })),
+  }));
 
   return (
     <>
@@ -47,90 +115,53 @@ export default async function UserDetailPage({ params }: PageProps) {
       />
 
       <div className="grid gap-6 p-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Account</CardTitle>
-            <CardDescription>Email, role, and account state.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Email</span>
-              <span>{user.email}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Role</span>
-              <Badge variant={user.role === "ADMIN" ? "default" : "secondary"}>{user.role}</Badge>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Created</span>
-              <span>{new Date(user.createdAt).toLocaleDateString()}</span>
-            </div>
-          </CardContent>
-        </Card>
+        <UserAccountCard
+          userId={user.id}
+          email={user.email}
+          role={user.role}
+          createdAt={user.createdAt.toISOString()}
+          suspended={!!user.suspendedAt}
+          viewerRole={viewerRole}
+          isSelf={session?.user?.id === user.id}
+        />
+
+        <UserInfoCard
+          queries24h={c24}
+          queries7d={c7}
+          errors7d={errors7}
+          lastAuditAt={lastAudit?.createdAt.toISOString() ?? null}
+          lastLoginAt={lastLogin?.createdAt.toISOString() ?? null}
+          topTools={topTools.map((t) => ({
+            name: t.toolName ?? "(unknown)",
+            count: t._count.toolName,
+          }))}
+        />
+
+        <UserWorkspacesCard userId={user.id} workspaces={workspaces} viewerRole={viewerRole} />
 
         <Card>
-          <CardHeader>
-            <CardTitle>Workspace assignments</CardTitle>
-            <CardDescription>Workspaces this user can access via MCP.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {user.workspaceUsers.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Not assigned to any workspaces yet.{" "}
-                <Link href="/workspaces" className="text-primary hover:underline">
-                  Go to workspaces
-                </Link>{" "}
-                to add this user.
-              </p>
-            ) : (
-              <ul className="space-y-3">
-                {user.workspaceUsers.map((wu) => {
-                  const perms = parsePermissions(wu.permissions);
-                  return (
-                    <li key={wu.id} className="rounded-md border border-border p-3">
-                      <div className="flex items-center justify-between">
-                        <Link
-                          href={`/workspaces/${wu.workspaceId}`}
-                          className="font-medium hover:text-primary"
-                        >
-                          {wu.workspace.name}
-                        </Link>
-                        <div className="flex gap-1">
-                          {perms.map((p) => (
-                            <Badge key={p} variant="outline" className="text-xs uppercase">
-                              {p}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {wu.workspace.dataSources.map((wds) => (
-                          <Badge key={wds.id} variant="secondary" className="text-xs">
-                            {wds.dataSource.name}
-                          </Badge>
-                        ))}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>MCP connection URL</CardTitle>
             <CardDescription>
               Paste this URL into Claude Code&apos;s{" "}
-              <span className="font-mono text-xs">.mcp.json</span>. The user will sign in via OAuth
-              on first connect — the URL itself is not a secret.
+              <span className="font-mono text-xs">.mcp.json</span>. Every user shares the same URL —
+              OAuth on first connect determines whose permissions apply.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <UserMcpUrl userId={user.id} initialMcpUid={user.mcpUid} />
+            <UserMcpUrl url={mcpUrl} />
           </CardContent>
         </Card>
+
+        <UserActivityCard rows={recent.map((r) => ({
+          id: r.id,
+          method: r.method,
+          toolName: r.toolName,
+          status: r.status,
+          durationMs: r.durationMs,
+          createdAt: r.createdAt.toISOString(),
+          errorMessage: r.errorMessage,
+        }))} />
       </div>
     </>
   );
