@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { requirePermission, requireOwner } from "@/lib/auth";
 import { can } from "@/lib/permissions/resolve";
+import { syncUserRoleMirror } from "@/lib/permissions/sync";
 import { writeAdminEvent } from "@/lib/admin-events";
 import { ROLES } from "@/lib/rbac";
 
@@ -84,6 +85,14 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
     update.suspendedAt = parsed.data.suspended ? new Date() : null;
   }
   const updated = await prisma.user.update({ where: { id }, data: update });
+
+  // When the legacy User.role string changes, mirror the new role into a
+  // UserRole row so the new-RBAC engine (USE_NEW_RBAC=true) sees the change
+  // immediately. Without this, role edits silently no-op because the
+  // resolver reads UserRole, not User.role.
+  if (parsed.data.role && parsed.data.role !== before.role) {
+    await syncUserRoleMirror(id, parsed.data.role);
+  }
 
   const changes: Record<string, { from: unknown; to: unknown }> = {};
   if (parsed.data.name && parsed.data.name !== before.name)

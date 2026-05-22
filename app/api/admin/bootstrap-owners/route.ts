@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { syncUserRoleMirror } from "@/lib/permissions/sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,8 +36,10 @@ export async function POST(request: Request) {
       const updated = await prisma.user.update({
         where: { email },
         data: { role: "OWNER" },
-        select: { role: true },
+        select: { id: true, role: true },
       });
+      // Keep the new-RBAC mirror in sync with the legacy column.
+      await syncUserRoleMirror(updated.id, updated.role);
       results.push({ email, before: before.role, after: updated.role, ok: true });
     } catch (err) {
       results.push({

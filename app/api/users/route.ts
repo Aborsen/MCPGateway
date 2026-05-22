@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { requirePermission } from "@/lib/auth";
 import { writeAdminEvent } from "@/lib/admin-events";
 import { ROLES } from "@/lib/rbac";
+import { syncUserRoleMirror } from "@/lib/permissions/sync";
 
 const CreateSchema = z.object({
   email: z.string().email(),
@@ -50,6 +51,10 @@ export async function POST(request: Request) {
   const user = await prisma.user.create({
     data: { email: data.email, name: data.name, role: data.role, passwordHash },
   });
+  // Keep the new-RBAC UserRole mirror in sync with the legacy User.role
+  // column so USE_NEW_RBAC=true sees the new user with the correct role
+  // immediately, not just after the next build's seed reconciliation.
+  await syncUserRoleMirror(user.id, data.role);
   await writeAdminEvent({
     actorId: session.user.id,
     targetUserId: user.id,
