@@ -15,6 +15,9 @@ model User {
   email        String    @unique
   name         String
   passwordHash String
+  // role is kept during Phase 2 PR1 for backward compat with the static
+  // lib/rbac.ts matrix. PR2 makes the new RBAC engine authoritative and
+  // drops this column.
   role         String    @default("USER")
   mcpUid       String?   @unique
   createdAt    DateTime  @default(now())
@@ -26,6 +29,10 @@ model User {
   eventsActed    AdminEvent[] @relation("AdminEventActor")
   eventsTargeted AdminEvent[] @relation("AdminEventTargetUser")
   directGrants   UserDataSourceAccess[]
+  roles          UserRole[]
+  permissionOverrides UserPermissionOverride[]
+  rolesGranted   UserRole[] @relation("UserRoleGrantedBy")
+  overridesGranted UserPermissionOverride[] @relation("UserPermissionOverrideGrantedBy")
 }
 
 model OidcModel {
@@ -96,8 +103,10 @@ model Workspace {
   createdAt   DateTime  @default(now())
   deletedAt   DateTime?
 
-  dataSources WorkspaceDataSource[]
-  users       WorkspaceUser[]
+  dataSources         WorkspaceDataSource[]
+  users               WorkspaceUser[]
+  userRoles           UserRole[]
+  permissionOverrides UserPermissionOverride[]
 }
 
 model WorkspaceDataSource {
@@ -160,4 +169,99 @@ model AuditLog {
   @@index([method, createdAt])
   @@index([dataSourceId, createdAt])
   @@index([status, createdAt])
+}
+
+// ============================================================================
+// Phase 2 RBAC (PR1) — see plan §"Phase 2 — Production RBAC".
+// PR1 creates the tables and an idempotent seed populates them on every build.
+// Nothing reads these yet — lib/rbac.ts is still authoritative until PR2.
+// ============================================================================
+
+// Atomic permission catalog. Seeded from lib/permissions/catalog.ts; the
+// `key` is the source of truth referenced everywhere in code. `scopeable`
+// means a grant of this permission can be tied to a specific Workspace.
+model Permission {
+  key         String   @id
+  label       String
+  category    String
+  scopeable   Boolean  @default(false)
+  description String
+
+  rolePermissions    RolePermission[]
+  overrides          UserPermissionOverride[]
+
+  @@index([category])
+}
+
+// A named bundle of permissions. System roles (isSystem=true) are seeded
+// and cannot be edited or deleted via the UI. Custom roles are admin-authored.
+model Role {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  description String
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rolePermissions RolePermission[]
+  assignments     UserRole[]
+}
+
+// Join table: which permissions does each role grant.
+model RolePermission {
+  roleId        String
+  permissionKey String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+
+  @@id([roleId, permissionKey])
+  @@index([permissionKey])
+}
+
+// Assignment of a Role to a User, optionally scoped to a Workspace. NULL
+// workspaceId means a global assignment; non-NULL means the role's powers
+// apply only within that specific workspace.
+model UserRole {
+  id          String   @id @default(cuid())
+  userId      String
+  roleId      String
+  workspaceId String?
+  grantedById String?
+  grantedAt   DateTime @default(now())
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  grantedBy User?      @relation("UserRoleGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, roleId, workspaceId])
+  @@index([userId])
+  @@index([workspaceId])
+}
+
+// Per-user GRANT or REVOKE of a single permission, layered on top of the
+// roles. Hybrid model — admin authors live here. `reason` is required by
+// the UI for audit hygiene. `expiresAt` lets PR5 implement time-bounded
+// access via a daily cron.
+model UserPermissionOverride {
+  id            String    @id @default(cuid())
+  userId        String
+  permissionKey String
+  workspaceId   String?
+  effect        String    // "GRANT" | "REVOKE"
+  reason        String?
+  grantedById   String?
+  grantedAt     DateTime  @default(now())
+  expiresAt     DateTime?
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+  workspace  Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  grantedBy  User?      @relation("UserPermissionOverrideGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, permissionKey, workspaceId, effect])
+  @@index([userId])
+  @@index([expiresAt])
 }
