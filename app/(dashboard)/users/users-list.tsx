@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Plus,
-  MoreHorizontal,
   Trash2,
   Pencil,
   Search,
@@ -228,14 +227,13 @@ export function UsersList({
                   sort={sort}
                   onToggle={toggleSort}
                 />
-                <th className="w-12 px-4 py-3"></th>
-                <th className="w-12 px-4 py-3"></th>
+                <th className="px-4 py-3 text-right font-medium">Quick actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
                     No users match.
                   </td>
                 </tr>
@@ -301,27 +299,20 @@ export function UsersList({
                       )}
                     </td>
                     <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                      {canEdit && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => router.push(`/users/${u.id}`)}
-                          aria-label="Edit user"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" aria-label="Quick actions">
-                            <MoreHorizontal className="h-4 w-4" />
+                          <Button variant="ghost" size="sm" className="gap-1">
+                            Quick actions
+                            <ChevronDown className="h-3 w-3" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-44">
-                          <DropdownMenuLabel>Quick actions</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onSelect={() => router.push(`/users/${u.id}`)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                            Edit
+                          </DropdownMenuItem>
                           <DropdownMenuSub>
                             <DropdownMenuSubTrigger disabled={!canEdit}>
                               <Pencil className="h-4 w-4" />
