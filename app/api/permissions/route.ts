@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { getUserAccess } from "@/lib/mcp/permission-filter";
 
 export async function GET() {
-  const auth = await requireAdmin();
+  const auth = await requirePermission("permissions.view");
   if (auth instanceof NextResponse) return auth;
   const [users, dataSources] = await Promise.all([
     prisma.user.findMany({

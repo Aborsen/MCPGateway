@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { requireEdit } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
+import { can } from "@/lib/permissions/resolve";
 import { encryptJson } from "@/lib/crypto";
 import type { EncryptedConfig } from "@/lib/mcp/upstream-client";
 
@@ -27,7 +28,7 @@ const UpdateSchema = z.object({
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: RouteCtx) {
-  const auth = await requireEdit("connections");
+  const auth = await requirePermission("connections.update");
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   const body = await request.json();
@@ -45,6 +46,14 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   // Only touch credentials when the client sent at least one auth field.
   const touchedAuth =
     data.authScheme !== undefined || data.apiKey !== undefined || data.customHeaders !== undefined;
+
+  // Credential mutation is a separately-gated, more-sensitive permission.
+  if (touchedAuth && !(await can(auth.user.id, "connections.manage_credentials"))) {
+    return NextResponse.json(
+      { error: "forbidden: missing connections.manage_credentials" },
+      { status: 403 },
+    );
+  }
   if (touchedAuth) {
     const scheme = data.authScheme ?? "bearer";
     if (scheme === "none") {
@@ -73,7 +82,7 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
 }
 
 export async function DELETE(_request: Request, { params }: RouteCtx) {
-  const auth = await requireEdit("connections");
+  const auth = await requirePermission("connections.delete");
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   await prisma.dataSource.delete({ where: { id } });

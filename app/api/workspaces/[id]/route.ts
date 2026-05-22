@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requirePermissionInWorkspace } from "@/lib/auth";
+import { canInWorkspace } from "@/lib/permissions/resolve";
 
 const UpdateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -27,15 +28,50 @@ const UpdateSchema = z.object({
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: RouteCtx) {
-  const auth = await requireAdmin();
-  if (auth instanceof NextResponse) return auth;
   const { id } = await params;
+  // Base requirement: caller must have workspaces.update on this workspace
+  // (globally or workspace-scoped via UserRole(workspaceId=id)).
+  const session = await requirePermissionInWorkspace("workspaces.update", id);
+  if (session instanceof NextResponse) return session;
   const body = await request.json();
   const parsed = UpdateSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 });
   }
   const data = parsed.data;
+
+  // Per-section sub-permission checks. Each touched section needs the
+  // matching workspace-scoped permission. PR4 surfaces these distinctions
+  // in the workspace editor UI; PR2 keeps the endpoint shape but enforces
+  // them correctly.
+  if (data.dataSources !== undefined) {
+    if (!(await canInWorkspace(session.user.id, "workspaces.manage_data_sources", id))) {
+      return NextResponse.json(
+        { error: "forbidden: missing workspaces.manage_data_sources" },
+        { status: 403 },
+      );
+    }
+  }
+  if (data.users !== undefined) {
+    if (!(await canInWorkspace(session.user.id, "workspaces.manage_members", id))) {
+      return NextResponse.json(
+        { error: "forbidden: missing workspaces.manage_members" },
+        { status: 403 },
+      );
+    }
+    // The users array also carries each member's SQL-level permissions
+    // (select/insert/update/delete/execute). Setting those requires the
+    // separate data-permissions grant.
+    if (
+      data.users.some((u) => u.permissions.length > 0) &&
+      !(await canInWorkspace(session.user.id, "workspaces.manage_data_permissions", id))
+    ) {
+      return NextResponse.json(
+        { error: "forbidden: missing workspaces.manage_data_permissions" },
+        { status: 403 },
+      );
+    }
+  }
 
   await prisma.$transaction(async (tx) => {
     const update: Record<string, unknown> = {};
@@ -74,9 +110,9 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
 }
 
 export async function DELETE(_request: Request, { params }: RouteCtx) {
-  const auth = await requireAdmin();
-  if (auth instanceof NextResponse) return auth;
   const { id } = await params;
+  const session = await requirePermissionInWorkspace("workspaces.delete", id);
+  if (session instanceof NextResponse) return session;
   await prisma.workspace.update({ where: { id }, data: { deletedAt: new Date() } });
   return NextResponse.json({ ok: true });
 }

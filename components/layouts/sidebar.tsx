@@ -23,23 +23,25 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { canView, type Resource } from "@/lib/rbac";
 
+// Each nav item declares which permission category it belongs to. The
+// dashboard layout computes the user's set of visible categories once and
+// passes them in — this client component just filters.
 type NavItem = {
   href: string;
   label: string;
   icon: typeof LayoutDashboard;
-  resource: Resource;
+  category: string;
   exact?: boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard, resource: "dashboard", exact: true },
-  { href: "/connections", label: "Connections", icon: Plug, resource: "connections" },
-  { href: "/users", label: "Users", icon: Users, resource: "users" },
-  { href: "/workspaces", label: "Workspaces", icon: FolderTree, resource: "workspaces" },
-  { href: "/permissions", label: "Permissions", icon: ShieldCheck, resource: "permissions" },
-  { href: "/audit", label: "Audit", icon: FileText, resource: "audit" },
+  { href: "/", label: "Dashboard", icon: LayoutDashboard, category: "dashboard", exact: true },
+  { href: "/connections", label: "Connections", icon: Plug, category: "connections" },
+  { href: "/users", label: "Users", icon: Users, category: "users" },
+  { href: "/workspaces", label: "Workspaces", icon: FolderTree, category: "workspaces" },
+  { href: "/permissions", label: "Permissions", icon: ShieldCheck, category: "permissions" },
+  { href: "/audit", label: "Audit", icon: FileText, category: "audit" },
 ];
 
 function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
@@ -118,8 +120,15 @@ function AccountMenu({ user }: { user: { name: string; email: string } }) {
   );
 }
 
-export function Sidebar({ user }: { user: { name: string; email: string; role: string } }) {
+export function Sidebar({
+  user,
+  visibleCategories,
+}: {
+  user: { name: string; email: string; role: string };
+  visibleCategories: string[];
+}) {
   const pathname = usePathname();
+  const visible = new Set(visibleCategories);
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
@@ -140,7 +149,7 @@ export function Sidebar({ user }: { user: { name: string; email: string; role: s
       </Link>
 
       <nav className="flex-1 px-2 py-2 space-y-0.5">
-        {NAV_ITEMS.filter((item) => canView(user.role, item.resource)).map((item) => (
+        {NAV_ITEMS.filter((item) => visible.has(item.category)).map((item) => (
           <NavLink key={item.href} item={item} pathname={pathname} />
         ))}
       </nav>

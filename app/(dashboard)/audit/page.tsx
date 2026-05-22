@@ -1,11 +1,13 @@
 import { prisma } from "@/lib/db";
-import { gateView } from "@/lib/auth";
+import { gatePermission } from "@/lib/auth";
 import { AuditView } from "./audit-view";
 
 export const dynamic = "force-dynamic";
 
 export default async function AuditPage() {
-  await gateView("audit");
+  // PR2: gate on view_all. PR4 will split this so audit.view_own users
+  // also reach the page but see a filtered view.
+  await gatePermission("audit.view_all");
   const [users, dataSources] = await Promise.all([
     prisma.user.findMany({
       where: { deletedAt: null },

@@ -3,7 +3,8 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { ChevronLeft } from "lucide-react";
 import { prisma } from "@/lib/db";
-import { auth, gateView } from "@/lib/auth";
+import { gatePermission } from "@/lib/auth";
+import { can } from "@/lib/permissions/resolve";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { parsePermissions } from "@/lib/json";
@@ -18,10 +19,21 @@ export const dynamic = "force-dynamic";
 type PageProps = { params: Promise<{ id: string }> };
 
 export default async function UserDetailPage({ params }: PageProps) {
-  await gateView("users");
+  const session = await gatePermission("users.view");
   const { id } = await params;
-  const session = await auth();
-  const viewerRole = session?.user?.role ?? "USER";
+  const viewerId = session.user.id;
+  const viewerIsOwner = session.user.role === "OWNER";
+  // Per-action UI flags — computed once on the server, passed into the
+  // client cards. They use these to enable/disable the inline editors
+  // and the remove-from-workspace buttons.
+  const [viewerCanChangeRole, viewerCanSuspend, viewerCanRemoveMembership] =
+    await Promise.all([
+      can(viewerId, "users.change_role"),
+      can(viewerId, "users.suspend"),
+      // Removing this user from a workspace requires workspaces.manage_members.
+      // PR2 checks the global grant; PR4 will use per-workspace canInWorkspace.
+      can(viewerId, "workspaces.manage_members"),
+    ]);
 
   const user = await prisma.user.findFirst({
     where: { id, deletedAt: null },
@@ -121,8 +133,10 @@ export default async function UserDetailPage({ params }: PageProps) {
           role={user.role}
           createdAt={user.createdAt.toISOString()}
           suspended={!!user.suspendedAt}
-          viewerRole={viewerRole}
-          isSelf={session?.user?.id === user.id}
+          viewerIsOwner={viewerIsOwner}
+          viewerCanChangeRole={viewerCanChangeRole}
+          viewerCanSuspend={viewerCanSuspend}
+          isSelf={viewerId === user.id}
         />
 
         <UserInfoCard
@@ -137,7 +151,11 @@ export default async function UserDetailPage({ params }: PageProps) {
           }))}
         />
 
-        <UserWorkspacesCard userId={user.id} workspaces={workspaces} viewerRole={viewerRole} />
+        <UserWorkspacesCard
+          userId={user.id}
+          workspaces={workspaces}
+          canRemove={viewerCanRemoveMembership}
+        />
 
         <Card>
           <CardHeader>

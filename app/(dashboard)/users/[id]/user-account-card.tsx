@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ROLES, ROLE_LABEL, badgeVariantFor, canEdit, labelFor } from "@/lib/rbac";
+import { ROLES, ROLE_LABEL, badgeVariantFor, labelFor } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 
 export function UserAccountCard({
@@ -20,7 +20,9 @@ export function UserAccountCard({
   role,
   createdAt,
   suspended,
-  viewerRole,
+  viewerIsOwner,
+  viewerCanChangeRole,
+  viewerCanSuspend,
   isSelf,
 }: {
   userId: string;
@@ -28,7 +30,9 @@ export function UserAccountCard({
   role: string;
   createdAt: string;
   suspended: boolean;
-  viewerRole: string;
+  viewerIsOwner: boolean;
+  viewerCanChangeRole: boolean;
+  viewerCanSuspend: boolean;
   isSelf: boolean;
 }) {
   const router = useRouter();
@@ -36,12 +40,14 @@ export function UserAccountCard({
   const [currentSuspended, setCurrentSuspended] = useState(suspended);
   const [pending, startTransition] = useTransition();
 
-  const editable = canEdit(viewerRole, "users") && !isSelf;
-  const isViewerOwner = viewerRole === "OWNER";
   const isTargetOwner = currentRole === "OWNER";
-  const canChangeRole = editable && (isViewerOwner || !isTargetOwner);
-  const canSuspend = editable && (isViewerOwner || !isTargetOwner);
-  const assignableRoles = ROLES.filter((r) => r !== "OWNER" || isViewerOwner);
+  // You can't change/suspend your own account, and only Owners can touch
+  // someone who's currently an Owner.
+  const canChangeRole =
+    viewerCanChangeRole && !isSelf && (viewerIsOwner || !isTargetOwner);
+  const canSuspend =
+    viewerCanSuspend && !isSelf && (viewerIsOwner || !isTargetOwner);
+  const assignableRoles = ROLES.filter((r) => r !== "OWNER" || viewerIsOwner);
 
   async function patch(body: Record<string, unknown>): Promise<boolean> {
     const res = await fetch(`/api/users/${userId}`, {

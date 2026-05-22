@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { writeAdminEvent } from "@/lib/admin-events";
 import { ROLES } from "@/lib/rbac";
 
@@ -14,7 +14,7 @@ const CreateSchema = z.object({
 });
 
 export async function GET() {
-  const auth = await requireAdmin();
+  const auth = await requirePermission("users.view");
   if (auth instanceof NextResponse) return auth;
   const users = await prisma.user.findMany({
     where: { deletedAt: null },
@@ -27,7 +27,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await requireAdmin();
+  const session = await requirePermission("users.create");
   if (session instanceof NextResponse) return session;
   const body = await request.json();
   const parsed = CreateSchema.safeParse(body);

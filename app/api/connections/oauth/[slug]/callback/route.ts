@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { requireEdit } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { findCatalogEntry, isCatalogEntryReady } from "@/lib/connector-catalog";
 import {
   getOAuthCredentials,
@@ -66,7 +66,7 @@ function htmlResponse(body: string, status = 200): Response {
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
-  const auth = await requireEdit("connections");
+  const auth = await requirePermission("connections.create");
   if (auth instanceof NextResponse) return auth;
 
   const { slug } = await params;

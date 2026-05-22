@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireView } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 // commas/quotes/newlines are quoted with embedded quotes doubled.
 
 export async function GET() {
-  const auth = await requireView("users");
+  const auth = await requirePermission("users.view");
   if (auth instanceof NextResponse) return auth;
 
   const [users, activeRows] = await Promise.all([

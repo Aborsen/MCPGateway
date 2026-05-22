@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireView } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { listToolsFromUpstream } from "@/lib/mcp/upstream-client";
 import { classifyToolByName } from "@/lib/mcp/permission-filter";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, { params }: RouteCtx) {
-  const auth = await requireView("connections");
+  const auth = await requirePermission("connections.view");
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   const ds = await prisma.dataSource.findUnique({ where: { id } });

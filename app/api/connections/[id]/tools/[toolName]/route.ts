@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { requireEdit } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { writeAdminEvent } from "@/lib/admin-events";
 
 const BodySchema = z.object({
@@ -11,7 +11,7 @@ const BodySchema = z.object({
 type RouteCtx = { params: Promise<{ id: string; toolName: string }> };
 
 export async function PATCH(request: Request, { params }: RouteCtx) {
-  const session = await requireEdit("connections");
+  const session = await requirePermission("connections.manage_tools");
   if (session instanceof NextResponse) return session;
   const { id: dataSourceId, toolName: rawToolName } = await params;
   const toolName = decodeURIComponent(rawToolName);

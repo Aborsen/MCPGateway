@@ -1,11 +1,11 @@
 import { prisma } from "@/lib/db";
-import { gateView } from "@/lib/auth";
+import { gatePermission } from "@/lib/auth";
 import { ConnectionsList } from "./connections-list";
 
 export const dynamic = "force-dynamic";
 
 export default async function ConnectionsPage() {
-  await gateView("connections");
+  await gatePermission("connections.view");
   const connections = await prisma.dataSource.findMany({
     orderBy: { createdAt: "asc" },
     include: {

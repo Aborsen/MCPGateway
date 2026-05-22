@@ -6,7 +6,8 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 import { writeAdminEvent } from "./admin-events";
-import { canView, canEdit, type Resource } from "./rbac";
+import { can, canInWorkspace } from "./permissions/resolve";
+import type { Permission } from "./permissions/catalog";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   session: { strategy: "jwt" },
@@ -123,36 +124,54 @@ export async function requireOwner(): Promise<Session | NextResponse> {
   return session;
 }
 
-// Resource-scoped gates. Use these for endpoints that need view or edit
-// access to a specific top-level area rather than blanket admin.
-export async function requireView(resource: Resource): Promise<Session | NextResponse> {
+// ============================================================================
+// Phase 2 PR2 — permission-keyed gates.
+// These replaced the old requireView/requireEdit/gateView (resource-shaped,
+// driven by the static lib/rbac.ts matrix). Now every gate is a single
+// permission key from lib/permissions/catalog.ts and the resolver decides
+// whether the caller has it.
+// ============================================================================
+
+// Permission gate for API routes. Returns the session or a 401/403 NextResponse.
+// Usage:
+//   const auth = await requirePermission("connections.update");
+//   if (auth instanceof NextResponse) return auth;
+export async function requirePermission(
+  permission: Permission,
+): Promise<Session | NextResponse> {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (!canView(session.user.role, resource)) {
+  if (!(await can(session.user.id, permission))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   return session;
 }
 
-export async function requireEdit(resource: Resource): Promise<Session | NextResponse> {
+// Workspace-scoped permission gate. Used for endpoints that operate on a
+// specific workspace where the user might be a Workspace Admin of only that
+// workspace. The resolver merges global roles with workspace-scoped roles.
+export async function requirePermissionInWorkspace(
+  permission: Permission,
+  workspaceId: string,
+): Promise<Session | NextResponse> {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (!canEdit(session.user.role, resource)) {
+  if (!(await canInWorkspace(session.user.id, permission, workspaceId))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   return session;
 }
 
-// Server-component gate. Redirects unauthenticated users to /login and
-// 404s users without view access to the resource (so deep-links can't bypass
-// the sidebar filter). Use in top-level dashboard pages.
-export async function gateView(resource: Resource): Promise<Session> {
+// Permission gate for server components (dashboard pages). Redirects to
+// /login if unauthenticated; notFound() if missing permission (so deep-links
+// can't bypass sidebar filtering).
+export async function gatePermission(permission: Permission): Promise<Session> {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!canView(session.user.role, resource)) notFound();
+  if (!(await can(session.user.id, permission))) notFound();
   return session;
 }

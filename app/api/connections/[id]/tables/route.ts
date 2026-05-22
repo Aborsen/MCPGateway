@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireView } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { listToolsFromUpstream, callToolOnUpstream } from "@/lib/mcp/upstream-client";
 import type { McpToolResult } from "@/lib/mcp/types";
 
@@ -31,7 +31,7 @@ const cache = new Map<string, CacheEntry>();
 const TTL_MS = 60_000;
 
 export async function GET(request: Request, { params }: RouteCtx) {
-  const auth = await requireView("connections");
+  const auth = await requirePermission("connections.view");
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   const refresh = new URL(request.url).searchParams.get("refresh") === "1";

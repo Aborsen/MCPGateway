@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { requireEdit } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { encryptJson } from "@/lib/crypto";
 import { findCatalogEntry, isCatalogEntryReady } from "@/lib/connector-catalog";
 import type { EncryptedConfig } from "@/lib/mcp/upstream-client";
@@ -73,7 +73,7 @@ function stringifyExtra(input: Record<string, unknown> | undefined): Record<stri
 }
 
 export async function POST(request: Request) {
-  const auth = await requireEdit("connections");
+  const auth = await requirePermission("connections.create");
   if (auth instanceof NextResponse) return auth;
 
   let body: z.infer<typeof BodySchema>;

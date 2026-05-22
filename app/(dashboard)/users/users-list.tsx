@@ -63,11 +63,17 @@ export function UsersList({
   initial,
   viewerRole,
   viewerId,
+  viewerIsOwner,
+  viewerCanChangeRole,
+  viewerCanDelete,
   roleCounts,
 }: {
   initial: User[];
   viewerRole: string;
   viewerId: string;
+  viewerIsOwner: boolean;
+  viewerCanChangeRole: boolean;
+  viewerCanDelete: boolean;
   roleCounts: Record<string, number>;
 }) {
   const router = useRouter();
@@ -77,8 +83,6 @@ export function UsersList({
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [, startTransition] = useTransition();
-
-  const isOwner = viewerRole === "OWNER";
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -241,10 +245,16 @@ export function UsersList({
               )}
               {filtered.map((u) => {
                 const isTargetOwner = u.role === "OWNER";
-                const canEdit = isOwner || !isTargetOwner;
-                const canDelete = isOwner && u.id !== viewerId;
+                // Can the viewer change this row's role?
+                //   - must have users.change_role at all
+                //   - if the target is Owner, must also be an Owner
+                const canEditRow =
+                  viewerCanChangeRole && (viewerIsOwner || !isTargetOwner);
+                // Delete is Owner-only, and you can't delete yourself.
+                const canDeleteRow =
+                  viewerCanDelete && viewerIsOwner && u.id !== viewerId;
                 const assignableRoles = ROLES.filter(
-                  (r) => r !== "OWNER" || isOwner,
+                  (r) => r !== "OWNER" || viewerIsOwner,
                 );
                 return (
                   <tr
@@ -314,7 +324,7 @@ export function UsersList({
                             Edit
                           </DropdownMenuItem>
                           <DropdownMenuSub>
-                            <DropdownMenuSubTrigger disabled={!canEdit}>
+                            <DropdownMenuSubTrigger disabled={!canEditRow}>
                               <Pencil className="h-4 w-4" />
                               Change role
                             </DropdownMenuSubTrigger>
@@ -338,7 +348,7 @@ export function UsersList({
                               </DropdownMenuSubContent>
                             </DropdownMenuPortal>
                           </DropdownMenuSub>
-                          {canDelete && (
+                          {canDeleteRow && (
                             <>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem

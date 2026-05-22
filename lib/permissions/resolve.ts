@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { prisma } from "@/lib/db";
 import type { Permission } from "./catalog";
+import { LEGACY_ROLE_TO_SLUG, SYSTEM_ROLES } from "./catalog";
 
 // Permission resolver. Computes a user's effective permission set as:
 //   (UNION of permissions from every assigned UserRole that matches scope)
@@ -19,6 +20,37 @@ import type { Permission } from "./catalog";
 // only when the question is "can they do X in workspace W?".
 
 export type Scope = { workspaceId: string } | undefined;
+
+// Feature flag: when "true", the resolver reads from the new RBAC tables
+// (UserRole + RolePermission + UserPermissionOverride). When unset/false,
+// it falls back to translating the legacy User.role string into the
+// equivalent system-role permission set from catalog.ts.
+//
+// Both paths return identical results for users who haven't been migrated
+// beyond the legacy role string, because the seed populates UserRole rows
+// that mirror the legacy role exactly. The flag exists so PR2 can ship
+// the rewired guards safely — flip the flag to roll back the engine
+// without reverting code.
+function useNewRbac(): boolean {
+  return process.env.USE_NEW_RBAC === "true";
+}
+
+// Legacy resolver. Cached just like the new one. Reads the User.role
+// string and maps via SYSTEM_ROLES from catalog.ts. The output Set is the
+// same the new path would produce for a user who only has a global role
+// matching their legacy string.
+const _permissionsFromLegacyRole = cache(
+  async (userId: string): Promise<Set<string>> => {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, deletedAt: true, suspendedAt: true },
+    });
+    if (!user || user.deletedAt || user.suspendedAt) return new Set();
+    const slug = LEGACY_ROLE_TO_SLUG[user.role] ?? "user";
+    const def = SYSTEM_ROLES.find((r) => r.slug === slug);
+    return new Set(def?.permissions ?? []);
+  },
+);
 
 // Internal: one DB roundtrip per (user, scope), wrapped in React.cache so
 // repeated calls within the same request are deduped automatically.
@@ -74,7 +106,9 @@ export async function permissionsForUser(
   userId: string,
   scope?: Scope,
 ): Promise<Set<Permission>> {
-  const set = await _permissionsForUser(userId, scope?.workspaceId ?? null);
+  const set = useNewRbac()
+    ? await _permissionsForUser(userId, scope?.workspaceId ?? null)
+    : await _permissionsFromLegacyRole(userId);
   return set as Set<Permission>;
 }
 

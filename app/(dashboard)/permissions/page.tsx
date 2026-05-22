@@ -1,11 +1,11 @@
 import { PageHeader } from "@/components/layouts/page-header";
-import { gateView } from "@/lib/auth";
+import { gatePermission } from "@/lib/auth";
 import { PermissionsView } from "./permissions-view";
 
 export const dynamic = "force-dynamic";
 
 export default async function PermissionsPage() {
-  await gateView("permissions");
+  await gatePermission("permissions.view");
   return (
     <>
       <PageHeader

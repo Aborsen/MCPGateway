@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
-import { requireAdmin, requireOwner } from "@/lib/auth";
+import { requirePermission, requireOwner } from "@/lib/auth";
+import { can } from "@/lib/permissions/resolve";
 import { writeAdminEvent } from "@/lib/admin-events";
 import { ROLES } from "@/lib/rbac";
 
@@ -16,7 +17,8 @@ const UpdateSchema = z.object({
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: RouteCtx) {
-  const session = await requireAdmin();
+  // Base requirement: caller must be able to update users in general.
+  const session = await requirePermission("users.update");
   if (session instanceof NextResponse) return session;
   const { id } = await params;
   const body = await request.json();
@@ -31,7 +33,36 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   if (!before) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  // OWNER-only actions:
+
+  // Per-field permission checks. Each touched field requires its own
+  // dedicated permission so we can give "Role Manager" access to change
+  // roles without granting password resets, etc.
+  if (parsed.data.role !== undefined) {
+    if (!(await can(session.user.id, "users.change_role"))) {
+      return NextResponse.json(
+        { error: "forbidden: missing users.change_role" },
+        { status: 403 },
+      );
+    }
+  }
+  if (parsed.data.password !== undefined) {
+    if (!(await can(session.user.id, "users.reset_password"))) {
+      return NextResponse.json(
+        { error: "forbidden: missing users.reset_password" },
+        { status: 403 },
+      );
+    }
+  }
+  if (parsed.data.suspended !== undefined) {
+    if (!(await can(session.user.id, "users.suspend"))) {
+      return NextResponse.json(
+        { error: "forbidden: missing users.suspend" },
+        { status: 403 },
+      );
+    }
+  }
+
+  // OWNER-only invariants (enforced in code, not in the role definition):
   //   * Editing a user who currently has the OWNER role.
   //   * Assigning the OWNER role.
   //   * Demoting an OWNER to a lower role.

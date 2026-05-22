@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 
 export async function GET(request: Request) {
-  const auth = await requireAdmin();
+  const auth = await requirePermission("audit.view_admin_events");
   if (auth instanceof NextResponse) return auth;
   const { searchParams } = new URL(request.url);
   const days = Math.max(1, Math.min(90, Number(searchParams.get("days")) || 7));

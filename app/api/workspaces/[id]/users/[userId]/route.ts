@@ -1,14 +1,20 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requirePermissionInWorkspace } from "@/lib/auth";
 import { writeAdminEvent } from "@/lib/admin-events";
 
 type RouteCtx = { params: Promise<{ id: string; userId: string }> };
 
 export async function DELETE(_request: Request, { params }: RouteCtx) {
-  const session = await requireAdmin();
-  if (session instanceof NextResponse) return session;
   const { id: workspaceId, userId } = await params;
+  // Removing a user from a workspace is workspace-scoped manage_members.
+  // A workspace_admin of THIS workspace passes; a workspace_admin of ANOTHER
+  // workspace does not.
+  const session = await requirePermissionInWorkspace(
+    "workspaces.manage_members",
+    workspaceId,
+  );
+  if (session instanceof NextResponse) return session;
 
   const [workspace, user] = await Promise.all([
     prisma.workspace.findUnique({

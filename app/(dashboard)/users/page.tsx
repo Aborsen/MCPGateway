@@ -1,13 +1,22 @@
-import { auth, gateView } from "@/lib/auth";
+import { auth, gatePermission } from "@/lib/auth";
+import { can } from "@/lib/permissions/resolve";
 import { prisma } from "@/lib/db";
 import { UsersList } from "./users-list";
 
 export const dynamic = "force-dynamic";
 
 export default async function UsersPage() {
-  await gateView("users");
-  const [session, users, activeRows, roleCounts] = await Promise.all([
-    auth(),
+  const session = await gatePermission("users.view");
+  // Pre-compute UI-gating flags on the server so the client component can
+  // render conditional menus / buttons synchronously.
+  const viewerId = session.user.id;
+  const [viewerCanChangeRole, viewerCanDelete] = await Promise.all([
+    can(viewerId, "users.change_role"),
+    can(viewerId, "users.delete"),
+  ]);
+  const viewerIsOwner = session.user.role === "OWNER";
+
+  const [users, activeRows, roleCounts] = await Promise.all([
     prisma.user.findMany({
       where: { deletedAt: null },
       orderBy: { createdAt: "asc" },
@@ -44,11 +53,14 @@ export default async function UsersPage() {
     if (aid) activeAccountIds.add(aid);
   }
 
-  const viewerRole = session?.user?.role ?? "USER";
+  const viewerRole = session.user.role ?? "USER";
   return (
     <UsersList
       viewerRole={viewerRole}
-      viewerId={session?.user?.id ?? ""}
+      viewerId={viewerId}
+      viewerIsOwner={viewerIsOwner}
+      viewerCanChangeRole={viewerCanChangeRole}
+      viewerCanDelete={viewerCanDelete}
       roleCounts={Object.fromEntries(roleCounts.map((r) => [r.role, r._count._all]))}
       initial={users.map((u) => ({
         id: u.id,

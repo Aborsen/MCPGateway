@@ -7,8 +7,6 @@ import { Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { canEdit } from "@/lib/rbac";
-
 type Workspace = {
   membershipId: string;
   workspaceId: string;
@@ -20,17 +18,15 @@ type Workspace = {
 export function UserWorkspacesCard({
   userId,
   workspaces,
-  viewerRole,
+  canRemove,
 }: {
   userId: string;
   workspaces: Workspace[];
-  viewerRole: string;
+  canRemove: boolean;
 }) {
   const router = useRouter();
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
-
-  const canRemove = canEdit(viewerRole, "users");
 
   async function onRemove(w: Workspace) {
     if (!confirm(`Remove this user from "${w.workspaceName}"? They lose all connector access from this workspace.`)) {

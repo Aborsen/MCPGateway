@@ -3,6 +3,7 @@ import { Plug, Users, AlertTriangle, Activity } from "lucide-react";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getDashboardMetrics } from "@/lib/dashboard-metrics";
+import { gatePermission } from "@/lib/auth";
 import { QueriesByDayChart } from "./dashboard-chart";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,7 @@ function fmtTime(iso: string): string {
 }
 
 export default async function WorkspacePage() {
+  await gatePermission("dashboard.view");
   const m = await getDashboardMetrics();
 
   return (

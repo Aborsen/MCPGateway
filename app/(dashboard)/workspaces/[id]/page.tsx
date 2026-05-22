@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { prisma } from "@/lib/db";
-import { gateView } from "@/lib/auth";
+import { gatePermission } from "@/lib/auth";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { parsePermissions, parseAllowedTables } from "@/lib/json";
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 type PageProps = { params: Promise<{ id: string }> };
 
 export default async function WorkspaceDetailPage({ params }: PageProps) {
-  await gateView("workspaces");
+  await gatePermission("workspaces.view");
   const { id } = await params;
   const [workspace, allDataSources, allUsers] = await Promise.all([
     prisma.workspace.findFirst({

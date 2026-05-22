@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { writeAdminEvent } from "@/lib/admin-events";
 
 const BodySchema = z.object({
@@ -12,7 +12,7 @@ const BodySchema = z.object({
 type RouteCtx = { params: Promise<{ id: string; dsId: string }> };
 
 export async function PUT(request: Request, { params }: RouteCtx) {
-  const session = await requireAdmin();
+  const session = await requirePermission("permissions.manage_assignments");
   if (session instanceof NextResponse) return session;
   const { id: userId, dsId: dataSourceId } = await params;
   const body = await request.json();
@@ -86,7 +86,7 @@ export async function PUT(request: Request, { params }: RouteCtx) {
 }
 
 export async function DELETE(_request: Request, { params }: RouteCtx) {
-  const session = await requireAdmin();
+  const session = await requirePermission("permissions.manage_assignments");
   if (session instanceof NextResponse) return session;
   const { id: userId, dsId: dataSourceId } = await params;
   const ds = await prisma.dataSource.findUnique({ where: { id: dataSourceId } });

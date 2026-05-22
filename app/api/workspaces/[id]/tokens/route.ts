@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requirePermissionInWorkspace } from "@/lib/auth";
 
 // Reads or rotates the workspace's MCP connection URL.
 //
@@ -27,9 +27,9 @@ function generateUid(): string {
 }
 
 export async function GET(request: Request, { params }: RouteCtx) {
-  const auth = await requireAdmin();
-  if (auth instanceof NextResponse) return auth;
   const { id } = await params;
+  const auth = await requirePermissionInWorkspace("workspaces.view", id);
+  if (auth instanceof NextResponse) return auth;
   const workspace = await prisma.workspace.findFirst({
     where: { id, deletedAt: null },
     select: { mcpUid: true },
@@ -45,9 +45,10 @@ export async function GET(request: Request, { params }: RouteCtx) {
 
 // POST = generate (if absent) or rotate (if already set).
 export async function POST(request: Request, { params }: RouteCtx) {
-  const auth = await requireAdmin();
-  if (auth instanceof NextResponse) return auth;
   const { id } = await params;
+  // Rotating the workspace MCP URL is a workspace mutation.
+  const auth = await requirePermissionInWorkspace("workspaces.update", id);
+  if (auth instanceof NextResponse) return auth;
   const mcpUid = generateUid();
   await prisma.workspace.update({
     where: { id },
