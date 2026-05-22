@@ -6,7 +6,7 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 import { writeAdminEvent } from "./admin-events";
-import { can, canInWorkspace } from "./permissions/resolve";
+import { can, canInWorkspace, isOwnerUser } from "./permissions/resolve";
 import type { Permission } from "./permissions/catalog";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
@@ -113,12 +113,16 @@ export async function requireAdmin(): Promise<Session | NextResponse> {
 
 // OWNER only. Used to gate destructive or escalation actions
 // (delete user, assign OWNER role).
+//
+// Reads UserRole rather than the JWT role string: under USE_NEW_RBAC=true
+// the JWT can lag the DB (Auth.js only refreshes on sign-in) so we go to
+// the new-RBAC mirror as the source of truth.
 export async function requireOwner(): Promise<Session | NextResponse> {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (session.user.role !== "OWNER") {
+  if (!(await isOwnerUser(session.user.id))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   return session;

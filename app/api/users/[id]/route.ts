@@ -3,7 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { requirePermission, requireOwner } from "@/lib/auth";
-import { can } from "@/lib/permissions/resolve";
+import { can, isOwnerUser } from "@/lib/permissions/resolve";
 import { syncUserRoleMirror } from "@/lib/permissions/sync";
 import { writeAdminEvent } from "@/lib/admin-events";
 import { ROLES } from "@/lib/rbac";
@@ -67,11 +67,15 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   //   * Editing a user who currently has the OWNER role.
   //   * Assigning the OWNER role.
   //   * Demoting an OWNER to a lower role.
+  //
+  // Reads UserRole-backed isOwnerUser rather than the JWT role string —
+  // the JWT can be stale if the caller's role was edited since they signed
+  // in. The DB is the source of truth.
   const touchingOwner =
     before.role === "OWNER" ||
     parsed.data.role === "OWNER" ||
     (parsed.data.role && before.role === "OWNER");
-  if (touchingOwner && session.user.role !== "OWNER") {
+  if (touchingOwner && !(await isOwnerUser(session.user.id))) {
     return NextResponse.json(
       { error: "Only an Owner can modify an Owner or assign that role" },
       { status: 403 },

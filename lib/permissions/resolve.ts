@@ -142,3 +142,21 @@ export async function canSeeCategory(
   }
   return false;
 }
+
+// Is this user assigned the global "owner" system role? Reads UserRole
+// rather than the (possibly stale) JWT role string. Used for the Owner-only
+// invariants (last-Owner guard, only-Owner-touches-Owner) that need a fresh
+// check against the DB regardless of when the session was issued.
+//
+// Cached per-request like the other lookups.
+export const isOwnerUser = cache(async (userId: string): Promise<boolean> => {
+  const row = await prisma.userRole.findFirst({
+    where: {
+      userId,
+      workspaceId: null,
+      role: { slug: "owner", isSystem: true },
+    },
+    select: { id: true },
+  });
+  return !!row;
+});
