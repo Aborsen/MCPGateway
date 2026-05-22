@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Download,
   ShieldOff,
+  MoreHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -301,9 +302,8 @@ export function UsersList({
                     <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="gap-1">
-                            Quick actions
-                            <ChevronDown className="h-3 w-3" />
+                          <Button variant="ghost" size="icon" aria-label="Quick actions">
+                            <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-44">
@@ -393,7 +393,7 @@ function SortHeader({
         type="button"
         onClick={() => onToggle(sortKey)}
         className={cn(
-          "inline-flex items-center gap-1 hover:text-foreground",
+          "m-0 inline-flex items-center gap-1 border-0 bg-transparent p-0 text-left text-inherit hover:text-foreground",
           active && "text-foreground",
         )}
       >
