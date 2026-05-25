@@ -160,3 +160,52 @@ export const isOwnerUser = cache(async (userId: string): Promise<boolean> => {
   });
   return !!row;
 });
+
+// Which workspaces is this user allowed to see?
+//   { all: true }                — user has global workspaces.view (Owner,
+//                                   Admin, Staff, Guest etc.); show every
+//                                   workspace.
+//   { all: false, ids: Set<id> } — user only has scoped roles on specific
+//                                   workspaces; show only those.
+//
+// A user with NO global workspaces.view but a UserRole(workspaceId=W) row
+// that grants workspaces.view through their role definition shows up here
+// with ids={W}. The list page filters workspace results accordingly.
+//
+// Cached per-request.
+export type WorkspaceAccess = { all: true } | { all: false; ids: Set<string> };
+
+export const accessibleWorkspaceIds = cache(
+  async (userId: string): Promise<WorkspaceAccess> => {
+    // Cheap fast path: does the user have any global role that grants
+    // workspaces.view?
+    const globalSet = await permissionsForUser(userId);
+    if (globalSet.has("workspaces.view")) {
+      return { all: true };
+    }
+
+    // Otherwise enumerate every scoped UserRole the user holds. For each
+    // distinct workspaceId, check whether that role's permission set
+    // includes workspaces.view.
+    const scoped = await prisma.userRole.findMany({
+      where: { userId, workspaceId: { not: null } },
+      include: {
+        role: {
+          select: {
+            rolePermissions: { select: { permissionKey: true } },
+          },
+        },
+      },
+    });
+
+    const ids = new Set<string>();
+    for (const ur of scoped) {
+      if (!ur.workspaceId) continue;
+      const grantsView = ur.role.rolePermissions.some(
+        (rp) => rp.permissionKey === "workspaces.view",
+      );
+      if (grantsView) ids.add(ur.workspaceId);
+    }
+    return { all: false, ids };
+  },
+);

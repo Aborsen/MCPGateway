@@ -1,32 +1,70 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { prisma } from "@/lib/db";
-import { gatePermission } from "@/lib/auth";
+import { auth } from "@/lib/auth";
+import { canInWorkspace, can } from "@/lib/permissions/resolve";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { parsePermissions, parseAllowedTables } from "@/lib/json";
 import { WorkspaceEditor } from "./workspace-editor";
 import { WorkspaceMcpUrl } from "./workspace-mcp-url";
+import { WorkspaceAdminsCard } from "./workspace-admins-card";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = { params: Promise<{ id: string }> };
 
 export default async function WorkspaceDetailPage({ params }: PageProps) {
-  await gatePermission("workspaces.view");
+  const session = await auth();
+  if (!session?.user) redirect("/login");
   const { id } = await params;
-  const [workspace, allDataSources, allUsers] = await Promise.all([
-    prisma.workspace.findFirst({
-      where: { id, deletedAt: null },
-      include: {
-        dataSources: { include: { dataSource: true } },
-        users: { include: { user: true } },
-      },
-    }),
-    prisma.dataSource.findMany({ orderBy: { name: "asc" } }),
-    prisma.user.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } }),
-  ]);
+
+  // Scope-aware view gate: a workspace_admin scoped to this workspace
+  // qualifies even without global workspaces.view.
+  if (!(await canInWorkspace(session.user.id, "workspaces.view", id))) {
+    notFound();
+  }
+
+  // Per-action UI flags for the new Workspace admins card.
+  const canManageMembers = await canInWorkspace(
+    session.user.id,
+    "workspaces.manage_members",
+    id,
+  );
+  const canViewUsers = await can(session.user.id, "users.view");
+
+  const [workspace, allDataSources, allUsers, workspaceAdminRole, workspaceMemberRole, scopedAssignments] =
+    await Promise.all([
+      prisma.workspace.findFirst({
+        where: { id, deletedAt: null },
+        include: {
+          dataSources: { include: { dataSource: true } },
+          users: { include: { user: true } },
+        },
+      }),
+      prisma.dataSource.findMany({ orderBy: { name: "asc" } }),
+      prisma.user.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } }),
+      // Resolve the system role IDs we need for the picker.
+      prisma.role.findUnique({
+        where: { slug: "workspace_admin" },
+        select: { id: true },
+      }),
+      prisma.role.findUnique({
+        where: { slug: "workspace_member" },
+        select: { id: true },
+      }),
+      // All UserRole rows scoped to this workspace (admins + members).
+      prisma.userRole.findMany({
+        where: { workspaceId: id },
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          role: { select: { id: true, slug: true, name: true } },
+          grantedBy: { select: { name: true } },
+        },
+        orderBy: { grantedAt: "asc" },
+      }),
+    ]);
   if (!workspace) notFound();
 
   return (
@@ -58,6 +96,27 @@ export default async function WorkspaceDetailPage({ params }: PageProps) {
             <WorkspaceMcpUrl workspaceId={workspace.id} initialMcpUid={workspace.mcpUid} />
           </CardContent>
         </Card>
+
+        <WorkspaceAdminsCard
+          workspaceId={workspace.id}
+          workspaceName={workspace.name}
+          canManage={canManageMembers}
+          canViewUsers={canViewUsers}
+          workspaceAdminRoleId={workspaceAdminRole?.id ?? null}
+          workspaceMemberRoleId={workspaceMemberRole?.id ?? null}
+          allUsers={allUsers.map((u) => ({ id: u.id, name: u.name, email: u.email }))}
+          assignments={scopedAssignments.map((a) => ({
+            id: a.id,
+            userId: a.userId,
+            userName: a.user.name,
+            userEmail: a.user.email,
+            roleId: a.roleId,
+            roleSlug: a.role.slug,
+            roleName: a.role.name,
+            grantedAt: a.grantedAt.toISOString(),
+            grantedByName: a.grantedBy?.name ?? null,
+          }))}
+        />
 
         <WorkspaceEditor
           workspace={{
