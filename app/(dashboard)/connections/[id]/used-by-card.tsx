@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, FolderTree, User as UserIcon, ShieldCheck } from "lucide-react";
+import { Search, FolderTree, User as UserIcon, ShieldCheck, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -44,16 +46,41 @@ export type UserEntry = {
 // jumping pages.
 
 export function UsedByCard({
+  dataSourceId,
   workspaces,
   users,
   directGrantCount,
+  canManageDirectGrants,
 }: {
+  dataSourceId: string;
   workspaces: WorkspaceEntry[];
   users: UserEntry[];
   directGrantCount: number;
+  canManageDirectGrants: boolean;
 }) {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
   const [search, setSearch] = useState("");
   const [show, setShow] = useState<"all" | "workspaces" | "users">("all");
+
+  async function onRemoveDirectGrant(userId: string, userName: string) {
+    if (
+      !confirm(
+        `Remove direct grant for ${userName} on this connector? They keep access through any workspace memberships.`,
+      )
+    ) {
+      return;
+    }
+    const res = await fetch(`/api/users/${userId}/data-sources/${dataSourceId}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error ?? `Remove failed (${res.status})`);
+      return;
+    }
+    startTransition(() => router.refresh());
+  }
 
   const wsFiltered = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -190,10 +217,12 @@ export function UsedByCard({
                     count={usersFiltered.length}
                     totalCount={users.length}
                   >
-                    {usersFiltered.map((u) => (
+                    {usersFiltered.map((u) => {
+                      const hasDirect = u.sources.some((s) => s.kind === "direct");
+                      return (
                       <li
                         key={u.userId}
-                        className="rounded-md border border-border p-3"
+                        className="group rounded-md border border-border p-3"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <Link
@@ -203,7 +232,19 @@ export function UsedByCard({
                             <div className="font-medium">{u.userName}</div>
                             <div className="text-xs text-muted-foreground">{u.userEmail}</div>
                           </Link>
-                          {u.sources.some((s) => s.kind === "direct") && (
+                          {canManageDirectGrants && hasDirect && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => onRemoveDirectGrant(u.userId, u.userName)}
+                              aria-label="Remove direct grant"
+                              title="Remove direct grant on this connector"
+                              className="opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                            </Button>
+                          )}
+                          {hasDirect && (
                             <Badge
                               variant="outline"
                               className="shrink-0 gap-1 text-[10px]"
@@ -252,7 +293,8 @@ export function UsedByCard({
                           ))}
                         </ul>
                       </li>
-                    ))}
+                      );
+                    })}
                   </Section>
                 )}
               </div>

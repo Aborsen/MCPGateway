@@ -199,9 +199,11 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
         </Card>
 
         <UsedByCard
+          dataSourceId={ds.id}
           workspaces={workspaces}
           users={users}
           directGrantCount={directGrantCount}
+          canManageDirectGrants={canEditConnection}
         />
       </div>
     </>

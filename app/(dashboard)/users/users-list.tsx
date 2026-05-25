@@ -109,7 +109,16 @@ export function UsersList({
     const q = search.trim().toLowerCase();
     const rows = initial.filter((u) => {
       if (q && !u.name.toLowerCase().includes(q) && !u.email.toLowerCase().includes(q)) return false;
-      if (roleFilter !== "all" && u.role !== roleFilter) return false;
+      if (roleFilter !== "all") {
+        // The filter value is a role NAME (system label or custom name).
+        // Match against the primary system label OR any role on the user's
+        // assignment list so users with stacked custom roles surface too.
+        const names = new Set<string>([
+          ROLE_LABEL[u.role as keyof typeof ROLE_LABEL] ?? u.role,
+          ...u.allRoles.map((r) => r.name),
+        ]);
+        if (!names.has(roleFilter)) return false;
+      }
       return true;
     });
     rows.sort((a, b) => {
@@ -238,16 +247,24 @@ export function UsersList({
             />
           </div>
           <Select value={roleFilter} onValueChange={setRoleFilter}>
-            <SelectTrigger className="w-[160px]">
+            <SelectTrigger className="w-[200px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All roles</SelectItem>
               {ROLES.map((r) => (
-                <SelectItem key={r} value={r}>
+                <SelectItem key={r} value={ROLE_LABEL[r]}>
                   {ROLE_LABEL[r]}
                 </SelectItem>
               ))}
+              {bulkAssignableRoles
+                .filter((r) => !r.isSystem)
+                .map((r) => (
+                  <SelectItem key={r.id} value={r.name}>
+                    {r.name}{" "}
+                    <span className="text-[10px] text-muted-foreground">(custom)</span>
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
         </div>
