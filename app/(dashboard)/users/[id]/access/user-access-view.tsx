@@ -2,7 +2,14 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, ShieldCheck, ShieldOff, AlertCircle } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  ShieldCheck,
+  ShieldOff,
+  AlertCircle,
+  ChevronDown,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 export type Assignment = {
   id: string;
@@ -66,14 +74,356 @@ export type EffectivePermission = {
     | null;
 };
 
-type RoleOption = { id: string; slug: string; name: string; isSystem: boolean };
-type WorkspaceOption = { id: string; name: string };
-type CatalogEntry = { key: string; label: string; category: string; scopeable: boolean };
+export type RoleOption = { id: string; slug: string; name: string; isSystem: boolean };
+export type WorkspaceOption = { id: string; name: string };
+export type CatalogEntry = { key: string; label: string; category: string; scopeable: boolean };
 
-// Radix Select disallows empty-string values (used internally to mean
-// "cleared"). Use a sentinel for "no workspace scope" and translate to
-// null at the boundary when submitting.
+// Radix Select disallows empty-string values. Sentinel for "no workspace".
 const GLOBAL_SCOPE = "__global__";
+
+// ─── Assigned Roles ───────────────────────────────────────────────────────
+
+export function AssignedRolesCard({
+  userId,
+  canManage,
+  assignments,
+  roles,
+  workspaces,
+}: {
+  userId: string;
+  canManage: boolean;
+  assignments: Assignment[];
+  roles: RoleOption[];
+  workspaces: WorkspaceOption[];
+}) {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+
+  async function onRemove(a: Assignment) {
+    if (
+      !confirm(
+        `Remove ${a.roleName}${a.workspaceName ? ` on ${a.workspaceName}` : ""}?`,
+      )
+    )
+      return;
+    const res = await fetch(`/api/users/${userId}/role-assignments/${a.id}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error ?? `Remove failed (${res.status})`);
+      return;
+    }
+    startTransition(() => router.refresh());
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <CardTitle>Assigned roles</CardTitle>
+            <CardDescription>
+              Each row grants the user the permissions in that role, optionally limited to a workspace.
+            </CardDescription>
+          </div>
+          {canManage && (
+            <Button size="sm" onClick={() => setOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Add role
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {assignments.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No roles assigned.</p>
+        ) : (
+          <ul className="space-y-2">
+            {assignments.map((a) => (
+              <li
+                key={a.id}
+                className="flex items-center justify-between gap-2 rounded-md border border-border p-3"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={a.isSystemRole ? "default" : "outline"}>{a.roleName}</Badge>
+                  {a.workspaceName ? (
+                    <Badge variant="secondary" className="text-xs">
+                      {a.workspaceName}
+                    </Badge>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">global</span>
+                  )}
+                  <span className="text-xs text-muted-foreground">
+                    added {new Date(a.grantedAt).toLocaleDateString()}
+                    {a.grantedByName ? ` by ${a.grantedByName}` : ""}
+                  </span>
+                </div>
+                {canManage && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => onRemove(a)}
+                    aria-label="Remove"
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+      <AddRoleDialog
+        userId={userId}
+        open={open}
+        onOpenChange={setOpen}
+        roles={roles}
+        workspaces={workspaces}
+        onSaved={() => {
+          setOpen(false);
+          startTransition(() => router.refresh());
+        }}
+      />
+    </Card>
+  );
+}
+
+// ─── Permission Overrides ─────────────────────────────────────────────────
+
+export function PermissionOverridesCard({
+  userId,
+  canManage,
+  overrides,
+  workspaces,
+  catalog,
+}: {
+  userId: string;
+  canManage: boolean;
+  overrides: Override[];
+  workspaces: WorkspaceOption[];
+  catalog: CatalogEntry[];
+}) {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+
+  async function onRemove(o: Override) {
+    if (!confirm(`Remove ${o.effect.toLowerCase()} of ${o.permissionKey}?`)) return;
+    const res = await fetch(
+      `/api/users/${userId}/permission-overrides/${o.id}`,
+      { method: "DELETE" },
+    );
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error ?? `Remove failed (${res.status})`);
+      return;
+    }
+    startTransition(() => router.refresh());
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <CardTitle>Permission overrides</CardTitle>
+            <CardDescription>
+              One-off grants or revokes on top of roles. Use sparingly — these are the hardest to audit.
+            </CardDescription>
+          </div>
+          {canManage && (
+            <Button size="sm" onClick={() => setOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Add override
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {overrides.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No overrides active.</p>
+        ) : (
+          <ul className="space-y-2">
+            {overrides.map((o) => (
+              <li
+                key={o.id}
+                className="flex items-start justify-between gap-2 rounded-md border border-border p-3"
+              >
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {o.effect === "GRANT" ? (
+                      <Badge variant="success" className="gap-1">
+                        <ShieldCheck className="h-3 w-3" />
+                        GRANT
+                      </Badge>
+                    ) : (
+                      <Badge variant="destructive" className="gap-1">
+                        <ShieldOff className="h-3 w-3" />
+                        REVOKE
+                      </Badge>
+                    )}
+                    <code className="font-mono text-xs">{o.permissionKey}</code>
+                    {o.workspaceName && (
+                      <Badge variant="secondary" className="text-xs">
+                        {o.workspaceName}
+                      </Badge>
+                    )}
+                  </div>
+                  {o.reason && (
+                    <p className="text-xs italic text-muted-foreground">“{o.reason}”</p>
+                  )}
+                  <div className="text-xs text-muted-foreground">
+                    added {new Date(o.grantedAt).toLocaleDateString()}
+                    {o.grantedByName ? ` by ${o.grantedByName}` : ""}
+                    {o.expiresAt
+                      ? ` · expires ${new Date(o.expiresAt).toLocaleDateString()}`
+                      : ""}
+                  </div>
+                </div>
+                {canManage && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => onRemove(o)}
+                    aria-label="Remove"
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+      <AddOverrideDialog
+        userId={userId}
+        open={open}
+        onOpenChange={setOpen}
+        catalog={catalog}
+        workspaces={workspaces}
+        onSaved={() => {
+          setOpen(false);
+          startTransition(() => router.refresh());
+        }}
+      />
+    </Card>
+  );
+}
+
+// ─── Effective Permissions (collapsible) ──────────────────────────────────
+
+export function EffectivePermissionsCard({
+  effective,
+  className,
+}: {
+  effective: EffectivePermission[];
+  className?: string;
+}) {
+  const [filter, setFilter] = useState<"all" | "has" | "missing">("all");
+
+  const filtered = useMemo(() => {
+    if (filter === "has") return effective.filter((e) => e.has);
+    if (filter === "missing") return effective.filter((e) => !e.has);
+    return effective;
+  }, [effective, filter]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, EffectivePermission[]>();
+    for (const e of filtered) {
+      const arr = map.get(e.category) ?? [];
+      arr.push(e);
+      map.set(e.category, arr);
+    }
+    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [filtered]);
+
+  const hasCount = effective.filter((e) => e.has).length;
+  const totalCount = effective.length;
+
+  return (
+    <Card className={className}>
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-6 hover:bg-muted/20">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+              Effective permissions
+              <span className="text-xs font-normal text-muted-foreground">
+                {hasCount} / {totalCount} granted
+              </span>
+            </CardTitle>
+            <CardDescription className="mt-1 ml-6">
+              Every permission in the catalog plus the path it came from. Use this to debug “is it the role or the override?”
+            </CardDescription>
+          </div>
+        </summary>
+        <CardContent className="space-y-5">
+          <div className="flex items-center gap-1 text-xs">
+            <FilterPill
+              label="All"
+              active={filter === "all"}
+              onClick={() => setFilter("all")}
+            />
+            <FilterPill
+              label="Has"
+              active={filter === "has"}
+              onClick={() => setFilter("has")}
+            />
+            <FilterPill
+              label="Missing"
+              active={filter === "missing"}
+              onClick={() => setFilter("missing")}
+            />
+          </div>
+
+          {grouped.map(([category, perms]) => (
+            <div key={category} className="space-y-2">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                {category}
+              </div>
+              <ul className="space-y-1">
+                {perms.map((p) => (
+                  <li
+                    key={p.key}
+                    className="flex items-start justify-between gap-3 rounded-sm py-1 text-sm"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        {p.has ? (
+                          <ShieldCheck className="h-3.5 w-3.5 text-success" />
+                        ) : (
+                          <ShieldOff className="h-3.5 w-3.5 text-muted-foreground/60" />
+                        )}
+                        <code className="font-mono text-xs">{p.key}</code>
+                        {p.overriddenBy && (
+                          <Badge
+                            variant={
+                              p.overriddenBy.effect === "GRANT" ? "success" : "destructive"
+                            }
+                            className="text-[10px]"
+                          >
+                            override {p.overriddenBy.effect}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="ml-5 text-xs text-muted-foreground">
+                        {provenanceText(p)}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </CardContent>
+      </details>
+    </Card>
+  );
+}
+
+// ─── Convenience wrapper: the 3 cards in a 2-col grid for /users/[id]/access ──
 
 export function UserAccessView({
   userId,
@@ -96,279 +446,28 @@ export function UserAccessView({
   workspaces: WorkspaceOption[];
   catalog: CatalogEntry[];
 }) {
-  const router = useRouter();
-  const [, startTransition] = useTransition();
-  const [showAssignDialog, setShowAssignDialog] = useState(false);
-  const [showOverrideDialog, setShowOverrideDialog] = useState(false);
-  const [filter, setFilter] = useState<"all" | "has" | "missing">("all");
-
-  async function onRemoveAssignment(a: Assignment) {
-    if (
-      !confirm(
-        `Remove ${a.roleName}${a.workspaceName ? ` on ${a.workspaceName}` : ""}?`,
-      )
-    )
-      return;
-    const res = await fetch(`/api/users/${userId}/role-assignments/${a.id}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      alert(data.error ?? `Remove failed (${res.status})`);
-      return;
-    }
-    startTransition(() => router.refresh());
-  }
-
-  async function onRemoveOverride(o: Override) {
-    if (!confirm(`Remove ${o.effect.toLowerCase()} of ${o.permissionKey}?`)) return;
-    const res = await fetch(
-      `/api/users/${userId}/permission-overrides/${o.id}`,
-      { method: "DELETE" },
-    );
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      alert(data.error ?? `Remove failed (${res.status})`);
-      return;
-    }
-    startTransition(() => router.refresh());
-  }
-
-  const filteredEffective = useMemo(() => {
-    if (filter === "has") return effective.filter((e) => e.has);
-    if (filter === "missing") return effective.filter((e) => !e.has);
-    return effective;
-  }, [effective, filter]);
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, EffectivePermission[]>();
-    for (const e of filteredEffective) {
-      const arr = map.get(e.category) ?? [];
-      arr.push(e);
-      map.set(e.category, arr);
-    }
-    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [filteredEffective]);
-
   return (
     <div className="grid gap-6 p-6 lg:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <CardTitle>Assigned roles</CardTitle>
-              <CardDescription>
-                Each row grants the user the permissions in that role, optionally limited to a workspace.
-              </CardDescription>
-            </div>
-            {canManageAssignments && (
-              <Button size="sm" onClick={() => setShowAssignDialog(true)}>
-                <Plus className="h-4 w-4" />
-                Add role
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {assignments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No roles assigned.</p>
-          ) : (
-            <ul className="space-y-2">
-              {assignments.map((a) => (
-                <li
-                  key={a.id}
-                  className="flex items-center justify-between gap-2 rounded-md border border-border p-3"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={a.isSystemRole ? "default" : "outline"}>
-                      {a.roleName}
-                    </Badge>
-                    {a.workspaceName ? (
-                      <Badge variant="secondary" className="text-xs">
-                        {a.workspaceName}
-                      </Badge>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">global</span>
-                    )}
-                    <span className="text-xs text-muted-foreground">
-                      added {new Date(a.grantedAt).toLocaleDateString()}
-                      {a.grantedByName ? ` by ${a.grantedByName}` : ""}
-                    </span>
-                  </div>
-                  {canManageAssignments && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => onRemoveAssignment(a)}
-                      aria-label="Remove"
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <CardTitle>Permission overrides</CardTitle>
-              <CardDescription>
-                One-off grants or revokes on top of roles. Use sparingly — these are the hardest to audit.
-              </CardDescription>
-            </div>
-            {canManageOverrides && (
-              <Button size="sm" onClick={() => setShowOverrideDialog(true)}>
-                <Plus className="h-4 w-4" />
-                Add override
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {overrides.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No overrides active.</p>
-          ) : (
-            <ul className="space-y-2">
-              {overrides.map((o) => (
-                <li
-                  key={o.id}
-                  className="flex items-start justify-between gap-2 rounded-md border border-border p-3"
-                >
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {o.effect === "GRANT" ? (
-                        <Badge variant="success" className="gap-1">
-                          <ShieldCheck className="h-3 w-3" />
-                          GRANT
-                        </Badge>
-                      ) : (
-                        <Badge variant="destructive" className="gap-1">
-                          <ShieldOff className="h-3 w-3" />
-                          REVOKE
-                        </Badge>
-                      )}
-                      <code className="font-mono text-xs">{o.permissionKey}</code>
-                      {o.workspaceName && (
-                        <Badge variant="secondary" className="text-xs">
-                          {o.workspaceName}
-                        </Badge>
-                      )}
-                    </div>
-                    {o.reason && (
-                      <p className="text-xs italic text-muted-foreground">“{o.reason}”</p>
-                    )}
-                    <div className="text-xs text-muted-foreground">
-                      added {new Date(o.grantedAt).toLocaleDateString()}
-                      {o.grantedByName ? ` by ${o.grantedByName}` : ""}
-                      {o.expiresAt
-                        ? ` · expires ${new Date(o.expiresAt).toLocaleDateString()}`
-                        : ""}
-                    </div>
-                  </div>
-                  {canManageOverrides && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => onRemoveOverride(o)}
-                      aria-label="Remove"
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="lg:col-span-2">
-        <CardHeader>
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <CardTitle>Effective permissions</CardTitle>
-              <CardDescription>
-                Every permission in the catalog, whether this user has it, and why. Use this to debug “is it the role or the override?”
-              </CardDescription>
-            </div>
-            <div className="flex items-center gap-1 text-xs">
-              <FilterPill label="All" active={filter === "all"} onClick={() => setFilter("all")} />
-              <FilterPill label="Has" active={filter === "has"} onClick={() => setFilter("has")} />
-              <FilterPill label="Missing" active={filter === "missing"} onClick={() => setFilter("missing")} />
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {grouped.map(([category, perms]) => (
-            <div key={category} className="space-y-2">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                {category}
-              </div>
-              <ul className="space-y-1">
-                {perms.map((p) => (
-                  <li
-                    key={p.key}
-                    className="flex items-start justify-between gap-3 rounded-sm py-1 text-sm"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        {p.has ? (
-                          <ShieldCheck className="h-3.5 w-3.5 text-success" />
-                        ) : (
-                          <ShieldOff className="h-3.5 w-3.5 text-muted-foreground/60" />
-                        )}
-                        <code className="font-mono text-xs">{p.key}</code>
-                        {p.overriddenBy && (
-                          <Badge
-                            variant={p.overriddenBy.effect === "GRANT" ? "success" : "destructive"}
-                            className="text-[10px]"
-                          >
-                            override {p.overriddenBy.effect}
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="ml-5 text-xs text-muted-foreground">
-                        {provenanceText(p)}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <AddRoleDialog
+      <AssignedRolesCard
         userId={userId}
-        open={showAssignDialog}
-        onOpenChange={setShowAssignDialog}
+        canManage={canManageAssignments}
+        assignments={assignments}
         roles={roles}
         workspaces={workspaces}
-        onSaved={() => {
-          setShowAssignDialog(false);
-          startTransition(() => router.refresh());
-        }}
       />
-      <AddOverrideDialog
+      <PermissionOverridesCard
         userId={userId}
-        open={showOverrideDialog}
-        onOpenChange={setShowOverrideDialog}
-        catalog={catalog}
+        canManage={canManageOverrides}
+        overrides={overrides}
         workspaces={workspaces}
-        onSaved={() => {
-          setShowOverrideDialog(false);
-          startTransition(() => router.refresh());
-        }}
+        catalog={catalog}
       />
+      <EffectivePermissionsCard effective={effective} className="lg:col-span-2" />
     </div>
   );
 }
+
+// ─── Internals ────────────────────────────────────────────────────────────
 
 function FilterPill({
   label,
@@ -383,12 +482,12 @@ function FilterPill({
     <button
       type="button"
       onClick={onClick}
-      className={
-        "rounded-md border px-2 py-0.5 transition-colors " +
-        (active
+      className={cn(
+        "rounded-md border px-2 py-0.5 transition-colors",
+        active
           ? "border-primary bg-primary/10 text-foreground"
-          : "border-border text-muted-foreground hover:bg-muted")
-      }
+          : "border-border text-muted-foreground hover:bg-muted",
+      )}
     >
       {label}
     </button>
