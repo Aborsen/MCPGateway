@@ -23,6 +23,10 @@ const UpdateSchema = z.object({
   authScheme: z.enum(["bearer", "customHeaders", "none"]).optional(),
   apiKey: z.string().nullable().optional(),
   customHeaders: CustomHeadersSchema.nullable().optional(),
+  // Empty array = no blocklist (treated as null in storage). Hard list of
+  // table names the connector refuses to expose, regardless of which
+  // workspace or direct grant the caller is using.
+  blockedTables: z.array(z.string().min(1).max(200)).max(2000).nullable().optional(),
 });
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -42,6 +46,12 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   if (data.type !== undefined) update.type = data.type;
   if (data.upstreamUrl !== undefined) update.upstreamUrl = data.upstreamUrl;
   if (data.description !== undefined) update.description = data.description;
+  if (data.blockedTables !== undefined) {
+    update.blockedTables =
+      data.blockedTables && data.blockedTables.length > 0
+        ? JSON.stringify(data.blockedTables)
+        : null;
+  }
 
   // Only touch credentials when the client sent at least one auth field.
   const touchedAuth =

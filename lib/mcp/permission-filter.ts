@@ -25,12 +25,17 @@ export type UserAccess = {
   configEncrypted: string | null;
   permissions: Set<PermissionLevel>;
   allowedTables: string[] | null;
+  // Connection-wide hard blocklist from DataSource.blockedTables. Applied
+  // independently of allowedTables — even if a workspace explicitly allows
+  // a table, the connection's blocklist wins. null/empty = no global block.
+  blockedTables: string[] | null;
   sources: GrantSource[];
 };
 
-type MutableAccess = Omit<UserAccess, "permissions" | "allowedTables"> & {
+type MutableAccess = Omit<UserAccess, "permissions" | "allowedTables" | "blockedTables"> & {
   permissions: Set<PermissionLevel>;
   allowedTables: string[] | null;
+  blockedTables: string[] | null;
   // true if any contributing source had `null` (= all tables)
   hadNullTables: boolean;
 };
@@ -44,6 +49,7 @@ function ensureRow(
     type: string;
     upstreamUrl: string;
     configEncrypted: string | null;
+    blockedTables?: string | null;
   },
 ): MutableAccess {
   let row = map.get(ds.id);
@@ -57,6 +63,9 @@ function ensureRow(
       configEncrypted: ds.configEncrypted,
       permissions: new Set<PermissionLevel>(),
       allowedTables: [],
+      // Connection-wide blocklist is fixed once we see the DataSource; it
+      // doesn't union across sources like allowedTables does.
+      blockedTables: parseAllowedTables(ds.blockedTables ?? null),
       hadNullTables: false,
       sources: [],
     };
@@ -120,6 +129,7 @@ export async function getWorkspaceMemberAccess(
     configEncrypted: r.configEncrypted,
     permissions: r.permissions,
     allowedTables: r.allowedTables,
+    blockedTables: r.blockedTables,
     sources: r.sources,
   }));
 }
@@ -181,6 +191,7 @@ export async function getUserAccess(userId: string): Promise<UserAccess[]> {
     configEncrypted: r.configEncrypted,
     permissions: r.permissions,
     allowedTables: r.allowedTables,
+    blockedTables: r.blockedTables,
     sources: r.sources,
   }));
 }
@@ -290,25 +301,39 @@ const NAME_FIELDS = [
 export function filterListedTablesText(raw: string, allowed: string[]): string {
   if (!raw) return raw;
   const allowedLower = new Set(allowed.map((t) => t.toLowerCase()));
-  return filterAsJson(raw, allowedLower) ?? filterAsCsv(raw, allowedLower) ?? raw;
+  return filterAsJson(raw, allowedLower, "allow") ?? filterAsCsv(raw, allowedLower, "allow") ?? raw;
 }
 
-function filterAsJson(raw: string, allowedLower: Set<string>): string | null {
+// Inverse — drop blocked tables from a list response. Used by the
+// connection-wide blocklist when no workspace allowlist is in play.
+export function dropBlockedTablesText(raw: string, blocked: string[]): string {
+  if (!raw || blocked.length === 0) return raw;
+  const blockedLower = new Set(blocked.map((t) => t.toLowerCase()));
+  return filterAsJson(raw, blockedLower, "deny") ?? filterAsCsv(raw, blockedLower, "deny") ?? raw;
+}
+
+type Mode = "allow" | "deny";
+
+function keep(mode: Mode, set: Set<string>, name: string): boolean {
+  return mode === "allow" ? set.has(name) : !set.has(name);
+}
+
+function filterAsJson(raw: string, set: Set<string>, mode: Mode): string | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
     return null;
   }
-  const filtered = filterParsedValue(parsed, allowedLower);
+  const filtered = filterParsedValue(parsed, set, mode);
   if (filtered === undefined) return null;
   return JSON.stringify(filtered, null, 2);
 }
 
-function filterParsedValue(value: unknown, allowedLower: Set<string>): unknown {
+function filterParsedValue(value: unknown, set: Set<string>, mode: Mode): unknown {
   // Array of strings
   if (Array.isArray(value) && value.every((x) => typeof x === "string")) {
-    return (value as string[]).filter((s) => allowedLower.has(s.toLowerCase()));
+    return (value as string[]).filter((s) => keep(mode, set, s.toLowerCase()));
   }
   // Array of objects with a name field
   if (Array.isArray(value)) {
@@ -317,9 +342,10 @@ function filterParsedValue(value: unknown, allowedLower: Set<string>): unknown {
       const obj = item as Record<string, unknown>;
       for (const f of NAME_FIELDS) {
         const v = obj[f];
-        if (typeof v === "string") return allowedLower.has(v.toLowerCase());
+        if (typeof v === "string") return keep(mode, set, v.toLowerCase());
       }
-      return false;
+      // In allow mode an unknown row stays out; in deny mode it stays in.
+      return mode === "deny";
     });
   }
   // Object wrapping a list
@@ -327,14 +353,14 @@ function filterParsedValue(value: unknown, allowedLower: Set<string>): unknown {
     const o = value as Record<string, unknown>;
     for (const key of ["objects", "tables", "results", "data", "items", "rows"]) {
       if (Array.isArray(o[key])) {
-        return { ...o, [key]: filterParsedValue(o[key], allowedLower) };
+        return { ...o, [key]: filterParsedValue(o[key], set, mode) };
       }
     }
   }
   return undefined;
 }
 
-function filterAsCsv(raw: string, allowedLower: Set<string>): string | null {
+function filterAsCsv(raw: string, set: Set<string>, mode: Mode): string | null {
   const lines = raw.split(/\r?\n/).filter((l) => l.length > 0);
   if (lines.length < 2) return null;
   const headers = lines[0].split(",");
@@ -346,7 +372,7 @@ function filterAsCsv(raw: string, allowedLower: Set<string>): string | null {
   for (let i = 1; i < lines.length; i++) {
     const cells = lines[i].split(",");
     const name = cells[nameIdx]?.trim();
-    if (name && allowedLower.has(name.toLowerCase())) out.push(lines[i]);
+    if (name && keep(mode, set, name.toLowerCase())) out.push(lines[i]);
   }
   return out.join("\n");
 }

@@ -10,6 +10,7 @@ import {
   extractTableFromArgs,
   isRawQueryTool,
   filterListedTablesText,
+  dropBlockedTablesText,
   LIST_TABLES_TOOL_NAMES,
   type UserAccess,
 } from "@/lib/mcp/permission-filter";
@@ -253,6 +254,26 @@ export async function POST(request: Request) {
           );
         }
 
+        // Connection-wide blocklist runs first — it's the admin's hard kill
+        // switch. A raw-query tool with any blocked tables in scope is
+        // refused outright (no way to know which table the SQL targets).
+        const blocked = connector.blockedTables ?? [];
+        if (blocked.length > 0) {
+          if (isRawQueryTool(toolName)) {
+            throw new JsonRpcException(
+              ERROR_CODES.FORBIDDEN,
+              `Raw query tool '${toolName}' is blocked because this connection blocks ${blocked.length} table(s).`,
+            );
+          }
+          const requestedTable = extractTableFromArgs(args);
+          if (requestedTable && blocked.includes(requestedTable)) {
+            throw new JsonRpcException(
+              ERROR_CODES.FORBIDDEN,
+              `Table '${requestedTable}' is blocked on this connection.`,
+            );
+          }
+        }
+
         if (connector.allowedTables) {
           if (isRawQueryTool(toolName)) {
             throw new JsonRpcException(
@@ -280,8 +301,16 @@ export async function POST(request: Request) {
           args,
         );
 
-        if (connector.allowedTables && LIST_TABLES_TOOL_NAMES.has(toolName)) {
-          result = filterListResult(result, connector.allowedTables);
+        // Post-filter list-tables results so the user never sees a name
+        // they can't access. Apply workspace allowlist first (subset),
+        // then strip connection-blocked names (further subset).
+        if (LIST_TABLES_TOOL_NAMES.has(toolName)) {
+          if (connector.allowedTables) {
+            result = filterListResult(result, connector.allowedTables);
+          }
+          if (blocked.length > 0) {
+            result = dropBlockedListResult(result, blocked);
+          }
         }
 
         response = jsonRpcSuccess(body.id ?? null, result);
@@ -403,6 +432,16 @@ function filterListResult(result: McpToolResult, allowed: string[]): McpToolResu
     content: result.content.map((c) => {
       if (c.type !== "text") return c;
       return { type: "text" as const, text: filterListedTablesText(c.text, allowed) };
+    }),
+  };
+}
+
+function dropBlockedListResult(result: McpToolResult, blocked: string[]): McpToolResult {
+  return {
+    ...result,
+    content: result.content.map((c) => {
+      if (c.type !== "text") return c;
+      return { type: "text" as const, text: dropBlockedTablesText(c.text, blocked) };
     }),
   };
 }

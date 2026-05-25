@@ -31,6 +31,12 @@ export function TablesViewer({
   dataSourceName,
   initialSelected,
   onApply,
+  triggerLabel = "View tables",
+  triggerVariant = "outline",
+  dialogTitle,
+  dialogDescription,
+  applyLabel = "Apply",
+  selectionVerb = "selected",
 }: {
   dataSourceId: string;
   dataSourceName: string;
@@ -38,7 +44,19 @@ export function TablesViewer({
   initialSelected?: string[];
   /** If provided, an "Apply" button replaces "Copy selected" and the
    *  current selection is written back via this callback when clicked. */
-  onApply?: (names: string[]) => void;
+  onApply?: (names: string[]) => Promise<void> | void;
+  /** Override the trigger button label (default "View tables"). */
+  triggerLabel?: string;
+  /** Override the trigger button variant. */
+  triggerVariant?: "outline" | "default" | "destructive" | "ghost" | "secondary";
+  /** Override the dialog title (default uses the data source name). */
+  dialogTitle?: string;
+  /** Override the dialog description shown above the table list. */
+  dialogDescription?: string;
+  /** Label for the apply button (default "Apply"). */
+  applyLabel?: string;
+  /** Noun shown in the "N selected" counter — e.g. "blocked" for an editor. */
+  selectionVerb?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -108,18 +126,20 @@ export function TablesViewer({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
+        <Button variant={triggerVariant} size="sm">
           <Table2 className="h-3.5 w-3.5" />
-          View tables
+          {triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{dataSourceName} · tables</DialogTitle>
+          <DialogTitle>{dialogTitle ?? `${dataSourceName} · tables`}</DialogTitle>
           <DialogDescription>
-            {data?.source
-              ? <>Discovered via <code className="font-mono text-xs">{data.source}</code> on the upstream.</>
-              : "Discovering tables from the upstream MCP server…"}
+            {dialogDescription
+              ? dialogDescription
+              : data?.source
+                ? <>Discovered via <code className="font-mono text-xs">{data.source}</code> on the upstream.</>
+                : "Discovering tables from the upstream MCP server…"}
           </DialogDescription>
         </DialogHeader>
 
@@ -160,19 +180,19 @@ export function TablesViewer({
                 <span className="text-muted-foreground">
                   {filtered.length} of {data.tables.length}
                   {selected.size > 0 && (
-                    <span className="ml-2 text-primary">· {selected.size} selected</span>
+                    <span className="ml-2 text-primary">· {selected.size} {selectionVerb}</span>
                   )}
                 </span>
                 <div className="flex items-center gap-2">
                   {onApply ? (
                     <Button
                       size="sm"
-                      onClick={() => {
-                        onApply(Array.from(selected));
+                      onClick={async () => {
+                        await onApply(Array.from(selected));
                         setOpen(false);
                       }}
                     >
-                      Apply ({selected.size})
+                      {applyLabel} ({selected.size})
                     </Button>
                   ) : (
                     <>

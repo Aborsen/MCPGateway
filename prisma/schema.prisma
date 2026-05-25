@@ -58,6 +58,12 @@ model DataSource {
   upstreamUrl     String
   configEncrypted String?
   description     String?
+  // Connection-wide table blocklist. If set (JSON array of table names),
+  // any MCP tool call targeting one of these tables is rejected — applies
+  // regardless of which workspace or direct grant the user is using. Lets
+  // an admin permanently keep sensitive tables off the connector even if
+  // a workspace's allowedTables would otherwise permit them.
+  blockedTables   String?
   createdAt       DateTime @default(now())
 
   toolPermissions      ToolPermission[]

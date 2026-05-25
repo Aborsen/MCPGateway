@@ -2,13 +2,15 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, ExternalLink } from "lucide-react";
 import { prisma } from "@/lib/db";
-import { gatePermission } from "@/lib/auth";
+import { gatePermission, auth } from "@/lib/auth";
+import { can } from "@/lib/permissions/resolve";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { parseAllowedTables, parsePermissions } from "@/lib/json";
 import { ToolsEditor } from "./tools-editor";
 import { UsedByCard } from "./used-by-card";
 import { TablesViewer } from "@/components/tables-viewer";
+import { BlockedTablesEditor } from "./blocked-tables-editor";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +19,10 @@ type PageProps = { params: Promise<{ id: string }> };
 export default async function ConnectionDetailPage({ params }: PageProps) {
   await gatePermission("connections.view");
   const { id } = await params;
+  const session = await auth();
+  const canEditConnection = session?.user
+    ? await can(session.user.id, "connections.update")
+    : false;
   const ds = await prisma.dataSource.findUnique({
     where: { id },
     include: {
@@ -175,7 +181,16 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
                   Discovered live from the upstream. Levels are auto-classified; click a dropdown to override.
                 </CardDescription>
               </div>
-              <TablesViewer dataSourceId={ds.id} dataSourceName={ds.name} />
+              <div className="flex items-center gap-2">
+                <TablesViewer dataSourceId={ds.id} dataSourceName={ds.name} />
+                {canEditConnection && (
+                  <BlockedTablesEditor
+                    dataSourceId={ds.id}
+                    dataSourceName={ds.name}
+                    initialBlocked={parseAllowedTables(ds.blockedTables) ?? []}
+                  />
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
