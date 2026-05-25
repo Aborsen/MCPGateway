@@ -124,7 +124,7 @@ export function Sidebar({
   user,
   visibleCategories,
 }: {
-  user: { name: string; email: string; role: string };
+  user: { name: string; email: string };
   visibleCategories: string[];
 }) {
   const pathname = usePathname();

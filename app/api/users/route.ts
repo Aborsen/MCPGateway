@@ -5,12 +5,14 @@ import { prisma } from "@/lib/db";
 import { requirePermission } from "@/lib/auth";
 import { writeAdminEvent } from "@/lib/admin-events";
 import { ROLES } from "@/lib/rbac";
-import { syncUserRoleMirror } from "@/lib/permissions/sync";
+import { isOwnerUser } from "@/lib/permissions/resolve";
 
 const CreateSchema = z.object({
   email: z.string().email(),
   name: z.string().min(1).max(100),
   password: z.string().min(6),
+  // Role is a system-role slug (uppercase legacy form like "ADMIN"); we
+  // translate it into a UserRole row after creating the user.
   role: z.enum(ROLES as unknown as [string, ...string[]]).default("USER"),
 });
 
@@ -36,8 +38,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 });
   }
   const data = parsed.data;
-  // Only Owners can create another Owner.
-  if (data.role === "OWNER" && session.user.role !== "OWNER") {
+  // Only Owners can create another Owner. Read UserRole, not the JWT.
+  if (data.role === "OWNER" && !(await isOwnerUser(session.user.id))) {
     return NextResponse.json(
       { error: "Only an Owner can assign the Owner role" },
       { status: 403 },
@@ -47,14 +49,37 @@ export async function POST(request: Request) {
   if (existing) {
     return NextResponse.json({ error: "Email already in use" }, { status: 409 });
   }
-  const passwordHash = await bcrypt.hash(data.password, 10);
-  const user = await prisma.user.create({
-    data: { email: data.email, name: data.name, role: data.role, passwordHash },
+
+  // Look up the target system role by slug before we start so the create
+  // can run in one transaction.
+  const targetSlug = data.role.toLowerCase();
+  const role = await prisma.role.findUnique({
+    where: { slug: targetSlug },
+    select: { id: true },
   });
-  // Keep the new-RBAC UserRole mirror in sync with the legacy User.role
-  // column so USE_NEW_RBAC=true sees the new user with the correct role
-  // immediately, not just after the next build's seed reconciliation.
-  await syncUserRoleMirror(user.id, data.role);
+  if (!role) {
+    return NextResponse.json(
+      { error: `System role "${targetSlug}" not found — run the rbac seed` },
+      { status: 500 },
+    );
+  }
+
+  const passwordHash = await bcrypt.hash(data.password, 10);
+  const user = await prisma.$transaction(async (tx) => {
+    const u = await tx.user.create({
+      data: { email: data.email, name: data.name, passwordHash },
+    });
+    await tx.userRole.create({
+      data: {
+        userId: u.id,
+        roleId: role.id,
+        workspaceId: null,
+        grantedById: session.user.id,
+      },
+    });
+    return u;
+  });
+
   await writeAdminEvent({
     actorId: session.user.id,
     targetUserId: user.id,
@@ -62,7 +87,7 @@ export async function POST(request: Request) {
     targetType: "user",
     targetId: user.id,
     targetLabel: user.email,
-    details: { email: user.email, name: user.name, role: user.role },
+    details: { email: user.email, name: user.name, role: data.role },
   });
   return NextResponse.json(user, { status: 201 });
 }

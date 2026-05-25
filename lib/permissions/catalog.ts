@@ -360,8 +360,10 @@ export const SYSTEM_ROLES: ReadonlyArray<SystemRoleDef> = [
   },
 ];
 
-// Map from legacy User.role string → system role slug. Used by the migration
-// in lib/permissions/seed.ts to translate existing users into UserRole rows.
+// Map from legacy User.role string → system role slug. PR2b dropped the
+// column itself, but the mapping is still useful at API boundaries that
+// accept the uppercase legacy form (the role select dropdown, the bulk
+// assign body) so we can resolve to the right system role record.
 export const LEGACY_ROLE_TO_SLUG: Record<string, string> = {
   OWNER: "owner",
   ADMIN: "admin",

@@ -21,9 +21,9 @@ async function main() {
   const updated = await prisma.user.update({
     where: { email },
     data: { passwordHash: hash },
-    select: { email: true, name: true, role: true },
+    select: { email: true, name: true },
   });
-  console.log(`✓ Password updated for ${updated.email} (${updated.name}, ${updated.role})`);
+  console.log(`✓ Password updated for ${updated.email} (${updated.name})`);
   await prisma.$disconnect();
 }
 

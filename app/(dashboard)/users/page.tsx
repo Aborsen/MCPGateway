@@ -1,5 +1,10 @@
-import { auth, gatePermission } from "@/lib/auth";
-import { can } from "@/lib/permissions/resolve";
+import { gatePermission } from "@/lib/auth";
+import {
+  can,
+  isOwnerUser,
+  primarySystemRolesByUserId,
+  primarySystemRoleFor,
+} from "@/lib/permissions/resolve";
 import { prisma } from "@/lib/db";
 import { UsersList } from "./users-list";
 
@@ -10,15 +15,21 @@ export default async function UsersPage() {
   // Pre-compute UI-gating flags on the server so the client component can
   // render conditional menus / buttons synchronously.
   const viewerId = session.user.id;
-  const [viewerCanChangeRole, viewerCanDelete, viewerCanManageAssignments] =
-    await Promise.all([
-      can(viewerId, "users.change_role"),
-      can(viewerId, "users.delete"),
-      can(viewerId, "permissions.manage_assignments"),
-    ]);
-  const viewerIsOwner = session.user.role === "OWNER";
+  const [
+    viewerCanChangeRole,
+    viewerCanDelete,
+    viewerCanManageAssignments,
+    viewerIsOwner,
+    viewerRole,
+  ] = await Promise.all([
+    can(viewerId, "users.change_role"),
+    can(viewerId, "users.delete"),
+    can(viewerId, "permissions.manage_assignments"),
+    isOwnerUser(viewerId),
+    primarySystemRoleFor(viewerId),
+  ]);
 
-  const [users, activeRows, roleCounts, bulkAssignableRoles] = await Promise.all([
+  const [users, activeRows, bulkAssignableRoles] = await Promise.all([
     prisma.user.findMany({
       where: { deletedAt: null },
       orderBy: { createdAt: "asc" },
@@ -39,11 +50,6 @@ export default async function UsersPage() {
       },
       select: { payload: true },
     }),
-    prisma.user.groupBy({
-      by: ["role"],
-      where: { deletedAt: null },
-      _count: { _all: true },
-    }),
     // Roles offered by the bulk-assign picker. System roles only (workspace-
     // scoped + custom roles need the per-user UI for context).
     prisma.role.findMany({
@@ -62,7 +68,15 @@ export default async function UsersPage() {
     if (aid) activeAccountIds.add(aid);
   }
 
-  const viewerRole = session.user.role ?? "USER";
+  // Resolve each user's primary system role from the UserRole table in one
+  // batched query (PR2b dropped User.role).
+  const roleByUserId = await primarySystemRolesByUserId(users.map((u) => u.id));
+  const roleCounts: Record<string, number> = {};
+  for (const u of users) {
+    const slug = roleByUserId.get(u.id) ?? "USER";
+    roleCounts[slug] = (roleCounts[slug] ?? 0) + 1;
+  }
+
   return (
     <UsersList
       viewerRole={viewerRole}
@@ -72,12 +86,12 @@ export default async function UsersPage() {
       viewerCanDelete={viewerCanDelete}
       viewerCanManageAssignments={viewerCanManageAssignments}
       bulkAssignableRoles={bulkAssignableRoles}
-      roleCounts={Object.fromEntries(roleCounts.map((r) => [r.role, r._count._all]))}
+      roleCounts={roleCounts}
       initial={users.map((u) => ({
         id: u.id,
         email: u.email,
         name: u.name,
-        role: u.role,
+        role: roleByUserId.get(u.id) ?? "USER",
         workspaceCount: u._count.workspaceUsers,
         workspaceNames: u.workspaceUsers.map((w) => w.workspace.name),
         mcpStatus: activeAccountIds.has(u.id) ? "active" : "inactive",

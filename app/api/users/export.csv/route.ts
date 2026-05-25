@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requirePermission } from "@/lib/auth";
+import { primarySystemRolesByUserId } from "@/lib/permissions/resolve";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,9 @@ export async function GET() {
     if (r.userId && r._max.createdAt) lastActivityByUser.set(r.userId, r._max.createdAt);
   }
 
+  // PR2b: roles come from UserRole, not User.role. Batched query.
+  const roleByUserId = await primarySystemRolesByUserId(users.map((u) => u.id));
+
   const headers = [
     "name",
     "email",
@@ -65,7 +69,7 @@ export async function GET() {
       [
         u.name,
         u.email,
-        u.role,
+        roleByUserId.get(u.id) ?? "USER",
         String(u._count.workspaceUsers),
         workspaceNames,
         activeIds.has(u.id) ? "active" : "inactive",

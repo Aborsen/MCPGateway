@@ -4,8 +4,9 @@
 //   - Upserts each system Role and reconciles its RolePermission rows
 //     (adds new permissions; removes any that are no longer in the catalog
 //     definition).
-//   - For each existing User that has zero UserRole rows, creates a global
-//     UserRole(workspaceId=NULL) mirroring their legacy User.role string.
+//   - For each User that still has zero UserRole rows (shouldn't happen
+//     post-PR2b but defensive), creates a global UserRole pointing at the
+//     "user" system role.
 //
 // Run via tsx so it doesn't go through Next bundling:
 //   tsx lib/permissions/seed.ts
@@ -15,11 +16,7 @@
 
 import { PrismaClient } from "../../generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
-import {
-  PERMISSION_ENTRIES,
-  SYSTEM_ROLES,
-  LEGACY_ROLE_TO_SLUG,
-} from "./catalog";
+import { PERMISSION_ENTRIES, SYSTEM_ROLES } from "./catalog";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("[rbac-seed] DATABASE_URL is not set.");
@@ -102,50 +99,37 @@ async function seedSystemRoles() {
   }
 }
 
-async function migrateLegacyUserRoles() {
-  // Find users with NO UserRole rows. Assume they were created before PR1
-  // and need their User.role string translated into a global UserRole.
-  const users = await prisma.user.findMany({
+async function backfillOrphanedUsers() {
+  // Defensive: users without any UserRole row get the "user" system role
+  // globally. Shouldn't normally happen post-PR2b because every create path
+  // writes a UserRole row, but the seed is the safety net for any state
+  // that gets out of sync (manual SQL, restored backups, etc.).
+  const orphans = await prisma.user.findMany({
     where: { deletedAt: null, roles: { none: {} } },
-    select: { id: true, email: true, role: true },
+    select: { id: true, email: true },
   });
+  if (orphans.length === 0) return;
 
-  if (users.length === 0) {
-    console.log(`[rbac-seed] no legacy users need role migration.`);
+  const userRole = await prisma.role.findUnique({
+    where: { slug: "user" },
+    select: { id: true },
+  });
+  if (!userRole) {
+    console.warn(`[rbac-seed] cannot backfill ${orphans.length} orphans: "user" system role missing`);
     return;
   }
-
-  console.log(`[rbac-seed] migrating ${users.length} legacy User.role strings → UserRole rows…`);
-
-  // Cache role IDs by slug to avoid N lookups.
-  const allSystemRoles = await prisma.role.findMany({
-    where: { isSystem: true },
-    select: { id: true, slug: true },
-  });
-  const roleIdBySlug = new Map(allSystemRoles.map((r) => [r.slug, r.id]));
-
-  let migrated = 0;
-  for (const u of users) {
-    const slug = LEGACY_ROLE_TO_SLUG[u.role] ?? "user";
-    const roleId = roleIdBySlug.get(slug);
-    if (!roleId) {
-      console.warn(
-        `[rbac-seed]   user ${u.email}: legacy role ${u.role} → slug ${slug} not in system roles, skipping`,
-      );
-      continue;
-    }
+  console.log(`[rbac-seed] backfilling ${orphans.length} orphaned users → "user" role…`);
+  for (const u of orphans) {
     await prisma.userRole.create({
-      data: { userId: u.id, roleId, workspaceId: null, grantedById: null },
+      data: { userId: u.id, roleId: userRole.id, workspaceId: null, grantedById: null },
     });
-    migrated++;
   }
-  console.log(`[rbac-seed]   migrated ${migrated} user(s).`);
 }
 
 async function main() {
   await seedPermissions();
   await seedSystemRoles();
-  await migrateLegacyUserRoles();
+  await backfillOrphanedUsers();
   console.log(`[rbac-seed] done.`);
 }
 

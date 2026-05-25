@@ -15,10 +15,8 @@ model User {
   email        String    @unique
   name         String
   passwordHash String
-  // role is kept during Phase 2 PR1 for backward compat with the static
-  // lib/rbac.ts matrix. PR2 makes the new RBAC engine authoritative and
-  // drops this column.
-  role         String    @default("USER")
+  // Phase 2 PR2b dropped the `role` string column. The user's effective
+  // role(s) live in UserRole below, joined to Role.
   mcpUid       String?   @unique
   createdAt    DateTime  @default(now())
   deletedAt    DateTime?

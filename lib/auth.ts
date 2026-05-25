@@ -6,7 +6,7 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 import { writeAdminEvent } from "./admin-events";
-import { can, canInWorkspace, isOwnerUser } from "./permissions/resolve";
+import { can, canInWorkspace, isOwnerUser, isAdminUser } from "./permissions/resolve";
 import type { Permission } from "./permissions/catalog";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
@@ -28,11 +28,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         if (user.suspendedAt) return null;
         const ok = await bcrypt.compare(String(credentials.password), user.passwordHash);
         if (!ok) return null;
+        // Role is no longer carried on the JWT — see lib/permissions/resolve
+        // for the source of truth. The session only needs the user id.
         return {
           id: user.id,
           email: user.email,
           name: user.name,
-          role: user.role,
         };
       },
     }),
@@ -41,14 +42,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     jwt({ token, user }) {
       if (user) {
         token.id = (user as { id: string }).id;
-        token.role = (user as { role: string }).role;
       }
       return token;
     },
     session({ session, token }) {
       if (session.user && token) {
         (session.user as { id: string }).id = token.id as string;
-        (session.user as { role: string }).role = token.role as string;
       }
       return session;
     },
@@ -96,16 +95,14 @@ export async function requireAuth(): Promise<Session | NextResponse> {
   return session;
 }
 
-// Admin tier accepts both ADMIN and OWNER.
-const ADMIN_ROLES = new Set(["ADMIN", "OWNER"]);
-
-// Returns the session or a 401/403 response. Accepts ADMIN or OWNER.
+// Admin tier accepts both Admin and Owner. Reads UserRole rather than the
+// JWT (the JWT no longer carries a role string; see Phase 2 PR2b).
 export async function requireAdmin(): Promise<Session | NextResponse> {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (!ADMIN_ROLES.has(session.user.role)) {
+  if (!(await isAdminUser(session.user.id))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   return session;

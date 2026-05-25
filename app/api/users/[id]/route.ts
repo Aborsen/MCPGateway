@@ -3,8 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { requirePermission, requireOwner } from "@/lib/auth";
-import { can, isOwnerUser } from "@/lib/permissions/resolve";
-import { syncUserRoleMirror } from "@/lib/permissions/sync";
+import { can, isOwnerUser, primarySystemRoleFor } from "@/lib/permissions/resolve";
 import { writeAdminEvent } from "@/lib/admin-events";
 import { ROLES } from "@/lib/rbac";
 
@@ -29,11 +28,14 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   }
   const before = await prisma.user.findUnique({
     where: { id },
-    select: { email: true, name: true, role: true, suspendedAt: true },
+    select: { email: true, name: true, suspendedAt: true },
   });
   if (!before) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  // Resolve the target's current primary role from UserRole (User.role
+  // column was dropped in PR2b).
+  const beforeRole = await primarySystemRoleFor(id);
 
   // Per-field permission checks. Each touched field requires its own
   // dedicated permission so we can give "Role Manager" access to change
@@ -63,46 +65,68 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
     }
   }
 
-  // OWNER-only invariants (enforced in code, not in the role definition):
-  //   * Editing a user who currently has the OWNER role.
-  //   * Assigning the OWNER role.
-  //   * Demoting an OWNER to a lower role.
-  //
-  // Reads UserRole-backed isOwnerUser rather than the JWT role string —
-  // the JWT can be stale if the caller's role was edited since they signed
-  // in. The DB is the source of truth.
+  // OWNER-only invariants. Touching an OWNER (the target's primary system
+  // role today) OR assigning the OWNER role requires the caller to be an
+  // Owner — both checks via UserRole, not the JWT.
   const touchingOwner =
-    before.role === "OWNER" ||
-    parsed.data.role === "OWNER" ||
-    (parsed.data.role && before.role === "OWNER");
+    beforeRole === "OWNER" || parsed.data.role === "OWNER";
   if (touchingOwner && !(await isOwnerUser(session.user.id))) {
     return NextResponse.json(
       { error: "Only an Owner can modify an Owner or assign that role" },
       { status: 403 },
     );
   }
+
+  // Build the user update (no role column anymore — that's a UserRole op).
   const update: Record<string, unknown> = {};
   if (parsed.data.name) update.name = parsed.data.name;
-  if (parsed.data.role) update.role = parsed.data.role;
   if (parsed.data.password) update.passwordHash = await bcrypt.hash(parsed.data.password, 10);
   if (parsed.data.suspended !== undefined) {
     update.suspendedAt = parsed.data.suspended ? new Date() : null;
   }
-  const updated = await prisma.user.update({ where: { id }, data: update });
+  if (Object.keys(update).length > 0) {
+    await prisma.user.update({ where: { id }, data: update });
+  }
 
-  // When the legacy User.role string changes, mirror the new role into a
-  // UserRole row so the new-RBAC engine (USE_NEW_RBAC=true) sees the change
-  // immediately. Without this, role edits silently no-op because the
-  // resolver reads UserRole, not User.role.
-  if (parsed.data.role && parsed.data.role !== before.role) {
-    await syncUserRoleMirror(id, parsed.data.role);
+  // Role change: replace the target's global system-role UserRole row.
+  // Custom-role and workspace-scoped assignments are untouched — those are
+  // managed via /api/users/[id]/role-assignments.
+  if (parsed.data.role && parsed.data.role !== beforeRole) {
+    const targetSlug = parsed.data.role.toLowerCase();
+    const role = await prisma.role.findUnique({
+      where: { slug: targetSlug },
+      select: { id: true },
+    });
+    if (!role) {
+      return NextResponse.json(
+        { error: `System role "${targetSlug}" not found — run the rbac seed` },
+        { status: 500 },
+      );
+    }
+    await prisma.$transaction([
+      prisma.userRole.deleteMany({
+        where: {
+          userId: id,
+          workspaceId: null,
+          role: { isSystem: true },
+        },
+      }),
+      prisma.userRole.create({
+        data: {
+          userId: id,
+          roleId: role.id,
+          workspaceId: null,
+          grantedById: session.user.id,
+        },
+      }),
+    ]);
   }
 
   const changes: Record<string, { from: unknown; to: unknown }> = {};
   if (parsed.data.name && parsed.data.name !== before.name)
     changes.name = { from: before.name, to: parsed.data.name };
-  if (parsed.data.role && parsed.data.role !== before.role)
-    changes.role = { from: before.role, to: parsed.data.role };
+  if (parsed.data.role && parsed.data.role !== beforeRole)
+    changes.role = { from: beforeRole, to: parsed.data.role };
   if (parsed.data.suspended !== undefined && !!before.suspendedAt !== parsed.data.suspended)
     changes.suspended = { from: !!before.suspendedAt, to: parsed.data.suspended };
 
@@ -137,7 +161,7 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
       targetLabel: before.email,
     });
   }
-  if (Object.keys(changes).length > 0 || (!parsed.data.password && !changes.role)) {
+  if (changes.name) {
     await writeAdminEvent({
       actorId: session.user.id,
       targetUserId: id,
@@ -149,7 +173,10 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
     });
   }
 
-  return NextResponse.json(updated);
+  // Re-resolve to send the up-to-date primary role back to the client so
+  // optimistic UIs don't have to guess.
+  const afterRole = await primarySystemRoleFor(id);
+  return NextResponse.json({ id, name: before.name, email: before.email, role: afterRole });
 }
 
 export async function DELETE(_request: Request, { params }: RouteCtx) {
@@ -164,8 +191,9 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
   }
   const before = await prisma.user.findUnique({
     where: { id },
-    select: { email: true, name: true, role: true },
+    select: { email: true, name: true },
   });
+  const beforeRole = await primarySystemRoleFor(id);
   await prisma.user.update({ where: { id }, data: { deletedAt: new Date() } });
   if (before) {
     await writeAdminEvent({
@@ -175,7 +203,7 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
       targetType: "user",
       targetId: id,
       targetLabel: before.email,
-      details: { email: before.email, name: before.name, role: before.role },
+      details: { email: before.email, name: before.name, role: beforeRole },
     });
   }
   return NextResponse.json({ ok: true });

@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { ChevronLeft } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { gatePermission } from "@/lib/auth";
-import { can } from "@/lib/permissions/resolve";
+import { can, isOwnerUser, primarySystemRoleFor } from "@/lib/permissions/resolve";
 import { PERMISSION_ENTRIES } from "@/lib/permissions/catalog";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,7 +28,7 @@ export default async function UserDetailPage({ params }: PageProps) {
   const session = await gatePermission("users.view");
   const { id } = await params;
   const viewerId = session.user.id;
-  const viewerIsOwner = session.user.role === "OWNER";
+  const viewerIsOwner = await isOwnerUser(viewerId);
 
   // Per-action UI flags — computed once on the server, passed into the
   // client cards. They use these to enable/disable the inline editors,
@@ -64,6 +64,10 @@ export default async function UserDetailPage({ params }: PageProps) {
     },
   });
   if (!user) notFound();
+
+  // PR2b: User.role column dropped. The "primary" system role for display
+  // purposes (the badge in the Account card) comes from UserRole.
+  const targetPrimaryRole = await primarySystemRoleFor(id);
 
   const since24h = new Date(Date.now() - 86400_000);
   const since7d = new Date(Date.now() - 7 * 86400_000);
@@ -236,7 +240,7 @@ export default async function UserDetailPage({ params }: PageProps) {
         <UserAccountCard
           userId={user.id}
           email={user.email}
-          role={user.role}
+          role={targetPrimaryRole}
           createdAt={user.createdAt.toISOString()}
           suspended={!!user.suspendedAt}
           viewerIsOwner={viewerIsOwner}

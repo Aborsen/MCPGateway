@@ -73,24 +73,41 @@ async function main() {
   const demoHash = await bcrypt.hash("demo123", 10);
 
   const admin = await prisma.user.create({
-    data: {
-      email: "admin@devart.com",
-      name: "Admin",
-      passwordHash: adminHash,
-      role: "OWNER",
-    },
+    data: { email: "admin@devart.com", name: "Admin", passwordHash: adminHash },
   });
-
   const alice = await prisma.user.create({
-    data: { email: "alice@devart.com", name: "Alice", passwordHash: demoHash, role: "USER" },
+    data: { email: "alice@devart.com", name: "Alice", passwordHash: demoHash },
   });
   const bob = await prisma.user.create({
-    data: { email: "bob@devart.com", name: "Bob", passwordHash: demoHash, role: "USER" },
+    data: { email: "bob@devart.com", name: "Bob", passwordHash: demoHash },
   });
   const carol = await prisma.user.create({
-    data: { email: "carol@devart.com", name: "Carol", passwordHash: demoHash, role: "USER" },
+    data: { email: "carol@devart.com", name: "Carol", passwordHash: demoHash },
   });
   console.log(`✓ Created users: admin, alice, bob, carol`);
+
+  // Demo seed runs against a freshly-reset DB, so we know the rbac seed will
+  // run next on Vercel builds; for local `db:reset` we also need to write
+  // UserRole rows here so the demo users actually have permissions.
+  const [ownerRole, userRole] = await Promise.all([
+    prisma.role.findUnique({ where: { slug: "owner" }, select: { id: true } }),
+    prisma.role.findUnique({ where: { slug: "user" }, select: { id: true } }),
+  ]);
+  if (ownerRole && userRole) {
+    await prisma.userRole.createMany({
+      data: [
+        { userId: admin.id, roleId: ownerRole.id, workspaceId: null },
+        { userId: alice.id, roleId: userRole.id, workspaceId: null },
+        { userId: bob.id, roleId: userRole.id, workspaceId: null },
+        { userId: carol.id, roleId: userRole.id, workspaceId: null },
+      ],
+      skipDuplicates: true,
+    });
+  } else {
+    console.warn(
+      "✗ system roles not seeded yet — run `tsx lib/permissions/seed.ts` then re-run db:seed",
+    );
+  }
 
   for (const ds of DATA_SOURCES) {
     await prisma.dataSource.create({ data: ds });

@@ -29,7 +29,7 @@ export default async function UserAccessPage({ params }: PageProps) {
   const [user, allRoles, allWorkspaces, assignments, overrides] = await Promise.all([
     prisma.user.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true, name: true, email: true, role: true },
+      select: { id: true, name: true, email: true },
     }),
     prisma.role.findMany({
       orderBy: [{ isSystem: "desc" }, { name: "asc" }],

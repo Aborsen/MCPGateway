@@ -1,17 +1,28 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { syncUserRoleMirror } from "@/lib/permissions/sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// One-shot: promote known accounts to OWNER. Hit it once after the
-// role-system deploy; remove the file in a follow-up commit.
+// One-shot: ensure known accounts have the Owner role globally. Idempotent
+// — re-runs are no-ops once everyone's already an Owner. Hit it once after
+// the role-system deploy; remove the file in a follow-up commit when the
+// Owner population is stable.
+//
+// PR2b: the User.role column is gone. We now write a UserRole row pointing
+// at the seeded "owner" system role for each target user.
 //
 // Auth: Authorization: Bearer ${CRON_SECRET} (same as the other admin
 // one-shots).
 
 const TARGETS = ["admin@devart.com", "victorg@devart.com"];
+
+type Result = {
+  email: string;
+  ok: boolean;
+  alreadyOwner?: boolean;
+  error?: string;
+};
 
 export async function POST(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -22,30 +33,47 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const results: { email: string; before: string | null; after: string | null; ok: boolean; error?: string }[] = [];
+  const ownerRole = await prisma.role.findUnique({
+    where: { slug: "owner" },
+    select: { id: true },
+  });
+  if (!ownerRole) {
+    return NextResponse.json(
+      { error: 'Owner role missing — run the rbac seed first' },
+      { status: 500 },
+    );
+  }
+
+  const results: Result[] = [];
   for (const email of TARGETS) {
     try {
-      const before = await prisma.user.findUnique({
+      const user = await prisma.user.findUnique({
         where: { email },
-        select: { role: true },
+        select: { id: true },
       });
-      if (!before) {
-        results.push({ email, before: null, after: null, ok: false, error: "user not found" });
+      if (!user) {
+        results.push({ email, ok: false, error: "user not found" });
         continue;
       }
-      const updated = await prisma.user.update({
-        where: { email },
-        data: { role: "OWNER" },
-        select: { id: true, role: true },
+      const existing = await prisma.userRole.findFirst({
+        where: {
+          userId: user.id,
+          workspaceId: null,
+          roleId: ownerRole.id,
+        },
+        select: { id: true },
       });
-      // Keep the new-RBAC mirror in sync with the legacy column.
-      await syncUserRoleMirror(updated.id, updated.role);
-      results.push({ email, before: before.role, after: updated.role, ok: true });
+      if (existing) {
+        results.push({ email, ok: true, alreadyOwner: true });
+        continue;
+      }
+      await prisma.userRole.create({
+        data: { userId: user.id, roleId: ownerRole.id, workspaceId: null },
+      });
+      results.push({ email, ok: true });
     } catch (err) {
       results.push({
         email,
-        before: null,
-        after: null,
         ok: false,
         error: err instanceof Error ? err.message : String(err),
       });

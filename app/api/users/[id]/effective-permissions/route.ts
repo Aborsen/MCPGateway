@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requirePermission } from "@/lib/auth";
 import { PERMISSION_ENTRIES } from "@/lib/permissions/catalog";
+import { primarySystemRoleFor } from "@/lib/permissions/resolve";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,10 +21,10 @@ export async function GET(_request: Request, { params }: RouteCtx) {
   const auth = await requirePermission("permissions.view");
   if (auth instanceof NextResponse) return auth;
 
-  const [user, assignments, overrides] = await Promise.all([
+  const [user, assignments, overrides, primaryRole] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, name: true, role: true, deletedAt: true },
+      select: { id: true, email: true, name: true, deletedAt: true },
     }),
     prisma.userRole.findMany({
       where: { userId },
@@ -39,6 +40,7 @@ export async function GET(_request: Request, { params }: RouteCtx) {
       include: { workspace: { select: { id: true, name: true } } },
       orderBy: { grantedAt: "desc" },
     }),
+    primarySystemRoleFor(userId),
   ]);
 
   if (!user || user.deletedAt) {
@@ -137,7 +139,7 @@ export async function GET(_request: Request, { params }: RouteCtx) {
   void grouped; // structure is built client-side from the flat list
 
   return NextResponse.json({
-    user: { id: user.id, email: user.email, name: user.name, role: user.role },
+    user: { id: user.id, email: user.email, name: user.name, role: primaryRole },
     permissions: result,
     assignments: assignments.map((a) => ({
       id: a.id,

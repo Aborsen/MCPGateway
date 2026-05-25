@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requirePermission } from "@/lib/auth";
 import { getUserAccess } from "@/lib/mcp/permission-filter";
+import { primarySystemRolesByUserId } from "@/lib/permissions/resolve";
 
 export async function GET() {
   const auth = await requirePermission("permissions.view");
@@ -10,13 +11,20 @@ export async function GET() {
     prisma.user.findMany({
       where: { deletedAt: null },
       orderBy: { name: "asc" },
-      select: { id: true, name: true, email: true, role: true },
+      select: { id: true, name: true, email: true },
     }),
     prisma.dataSource.findMany({
       orderBy: { name: "asc" },
       select: { id: true, name: true, slug: true, type: true },
     }),
   ]);
+
+  // PR2b: role comes from UserRole, not the dropped User.role column.
+  const roleByUserId = await primarySystemRolesByUserId(users.map((u) => u.id));
+  const usersWithRole = users.map((u) => ({
+    ...u,
+    role: roleByUserId.get(u.id) ?? "USER",
+  }));
 
   // For each user, compute effective access across all data sources.
   // getUserAccess returns only the data sources the user has *some* access to;
@@ -39,7 +47,7 @@ export async function GET() {
   );
 
   return NextResponse.json({
-    users,
+    users: usersWithRole,
     dataSources,
     grants: grants.flat(),
   });

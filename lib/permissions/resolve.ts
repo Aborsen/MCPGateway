@@ -1,7 +1,6 @@
 import { cache } from "react";
 import { prisma } from "@/lib/db";
 import type { Permission } from "./catalog";
-import { LEGACY_ROLE_TO_SLUG, SYSTEM_ROLES } from "./catalog";
 
 // Permission resolver. Computes a user's effective permission set as:
 //   (UNION of permissions from every assigned UserRole that matches scope)
@@ -20,37 +19,6 @@ import { LEGACY_ROLE_TO_SLUG, SYSTEM_ROLES } from "./catalog";
 // only when the question is "can they do X in workspace W?".
 
 export type Scope = { workspaceId: string } | undefined;
-
-// Feature flag: when "true", the resolver reads from the new RBAC tables
-// (UserRole + RolePermission + UserPermissionOverride). When unset/false,
-// it falls back to translating the legacy User.role string into the
-// equivalent system-role permission set from catalog.ts.
-//
-// Both paths return identical results for users who haven't been migrated
-// beyond the legacy role string, because the seed populates UserRole rows
-// that mirror the legacy role exactly. The flag exists so PR2 can ship
-// the rewired guards safely — flip the flag to roll back the engine
-// without reverting code.
-function useNewRbac(): boolean {
-  return process.env.USE_NEW_RBAC === "true";
-}
-
-// Legacy resolver. Cached just like the new one. Reads the User.role
-// string and maps via SYSTEM_ROLES from catalog.ts. The output Set is the
-// same the new path would produce for a user who only has a global role
-// matching their legacy string.
-const _permissionsFromLegacyRole = cache(
-  async (userId: string): Promise<Set<string>> => {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { role: true, deletedAt: true, suspendedAt: true },
-    });
-    if (!user || user.deletedAt || user.suspendedAt) return new Set();
-    const slug = LEGACY_ROLE_TO_SLUG[user.role] ?? "user";
-    const def = SYSTEM_ROLES.find((r) => r.slug === slug);
-    return new Set(def?.permissions ?? []);
-  },
-);
 
 // Internal: one DB roundtrip per (user, scope), wrapped in React.cache so
 // repeated calls within the same request are deduped automatically.
@@ -106,9 +74,7 @@ export async function permissionsForUser(
   userId: string,
   scope?: Scope,
 ): Promise<Set<Permission>> {
-  const set = useNewRbac()
-    ? await _permissionsForUser(userId, scope?.workspaceId ?? null)
-    : await _permissionsFromLegacyRole(userId);
+  const set = await _permissionsForUser(userId, scope?.workspaceId ?? null);
   return set as Set<Permission>;
 }
 
@@ -160,6 +126,87 @@ export const isOwnerUser = cache(async (userId: string): Promise<boolean> => {
   });
   return !!row;
 });
+
+// Is this user assigned the owner or admin system role globally? Cheap
+// boolean used by requireAdmin and a few places that used to compare
+// session.user.role against ADMIN_ROLES.
+export const isAdminUser = cache(async (userId: string): Promise<boolean> => {
+  const row = await prisma.userRole.findFirst({
+    where: {
+      userId,
+      workspaceId: null,
+      role: { slug: { in: ["owner", "admin"] }, isSystem: true },
+    },
+    select: { id: true },
+  });
+  return !!row;
+});
+
+// What's the user's "primary" system role for display purposes? PR2b
+// dropped User.role so the UI can no longer read a single string off the
+// user record. Instead, return the slug of the user's first global
+// system-role UserRole (uppercased to match legacy strings like "ADMIN",
+// "OWNER", etc.). Returns "USER" if no system role found, which matches
+// the legacy default.
+//
+// "Primary" here is a UX convention. A user with multiple system roles
+// shows only one in single-string contexts (the users list "Role" column,
+// the badge in settings). The full set is on /users/[id] under "Assigned
+// roles". Owner wins over Admin wins over Editor etc.
+const SYSTEM_ROLE_PRIORITY = ["owner", "admin", "editor", "staff", "guest", "user"];
+
+export const primarySystemRoleFor = cache(
+  async (userId: string): Promise<string> => {
+    const rows = await prisma.userRole.findMany({
+      where: {
+        userId,
+        workspaceId: null,
+        role: { isSystem: true },
+      },
+      select: { role: { select: { slug: true } } },
+    });
+    const slugs = new Set(rows.map((r) => r.role.slug));
+    for (const slug of SYSTEM_ROLE_PRIORITY) {
+      if (slugs.has(slug)) return slug.toUpperCase();
+    }
+    return "USER";
+  },
+);
+
+// Batched version of primarySystemRoleFor — fetch the primary slug for
+// many users in a single query. The users list and CSV export use this.
+export async function primarySystemRolesByUserId(
+  userIds: string[],
+): Promise<Map<string, string>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await prisma.userRole.findMany({
+    where: {
+      userId: { in: userIds },
+      workspaceId: null,
+      role: { isSystem: true },
+    },
+    select: { userId: true, role: { select: { slug: true } } },
+  });
+  const byUser = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const set = byUser.get(r.userId) ?? new Set<string>();
+    set.add(r.role.slug);
+    byUser.set(r.userId, set);
+  }
+  const out = new Map<string, string>();
+  for (const id of userIds) {
+    const slugs = byUser.get(id) ?? new Set();
+    let primary = "USER";
+    for (const slug of SYSTEM_ROLE_PRIORITY) {
+      if (slugs.has(slug)) {
+        primary = slug.toUpperCase();
+        break;
+      }
+    }
+    out.set(id, primary);
+  }
+  return out;
+}
 
 // Which workspaces is this user allowed to see?
 //   { all: true }                — user has global workspaces.view (Owner,
