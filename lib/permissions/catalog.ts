@@ -293,10 +293,8 @@ export const SYSTEM_ROLES: ReadonlyArray<SystemRoleDef> = [
   {
     slug: "admin",
     name: "Admin",
-    description: "Day-to-day administrator. Has every permission except managing the role catalog itself (cannot create/edit/delete roles).",
-    permissions: ALL_PERMISSIONS.filter(
-      (k) => k !== "permissions.manage_roles",
-    ),
+    description: "Day-to-day administrator. Holds every permission. Can create, edit, and delete users and custom roles. Owner-role assignment and Owner-account deletion remain restricted to Owners.",
+    permissions: ALL_PERMISSIONS,
   },
   {
     slug: "editor",

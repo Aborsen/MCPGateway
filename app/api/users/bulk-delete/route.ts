@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { requireOwner } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { writeAdminEvent } from "@/lib/admin-events";
-import { primarySystemRolesByUserId } from "@/lib/permissions/resolve";
+import { isOwnerUser, primarySystemRolesByUserId } from "@/lib/permissions/resolve";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Bulk soft-delete users. Owner-only (same as the single-user DELETE).
+// Bulk soft-delete users. Gated on the users.delete permission, with one
+// additional invariant: deleting an Owner-role account is still Owner-only.
 // Per-user success/failure so partial results are visible. The caller is
 // silently skipped if included in userIds — same self-protect rule as the
 // single-user path.
@@ -18,7 +19,7 @@ const BodySchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const session = await requireOwner();
+  const session = await requirePermission("users.delete");
   if (session instanceof NextResponse) return session;
   const body = await request.json();
   const parsed = BodySchema.safeParse(body);
@@ -34,6 +35,7 @@ export async function POST(request: Request) {
     select: { id: true, email: true, name: true },
   });
   const roleByUserId = await primarySystemRolesByUserId(targets.map((t) => t.id));
+  const callerIsOwner = await isOwnerUser(session.user.id);
 
   const results: { userId: string; ok: boolean; error?: string }[] = [];
   for (const userId of userIds) {
@@ -44,6 +46,14 @@ export async function POST(request: Request) {
     const target = targets.find((t) => t.id === userId);
     if (!target) {
       results.push({ userId, ok: false, error: "not found or already deleted" });
+      continue;
+    }
+    if (roleByUserId.get(userId) === "OWNER" && !callerIsOwner) {
+      results.push({
+        userId,
+        ok: false,
+        error: "Only an Owner can delete an Owner account",
+      });
       continue;
     }
     try {

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
-import { requirePermission, requireOwner } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { can, isOwnerUser, primarySystemRoleFor } from "@/lib/permissions/resolve";
 import { writeAdminEvent } from "@/lib/admin-events";
 import { ROLES } from "@/lib/rbac";
@@ -180,7 +180,7 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
 }
 
 export async function DELETE(_request: Request, { params }: RouteCtx) {
-  const session = await requireOwner();
+  const session = await requirePermission("users.delete");
   if (session instanceof NextResponse) return session;
   const { id } = await params;
   if (session.user.id === id) {
@@ -194,6 +194,14 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
     select: { email: true, name: true },
   });
   const beforeRole = await primarySystemRoleFor(id);
+  // Deleting an Owner-role user stays Owner-only — guards against escalation
+  // (an admin could otherwise wipe the Owner and claim the role themselves).
+  if (beforeRole === "OWNER" && !(await isOwnerUser(session.user.id))) {
+    return NextResponse.json(
+      { error: "Only an Owner can delete an Owner account" },
+      { status: 403 },
+    );
+  }
   await prisma.user.update({ where: { id }, data: { deletedAt: new Date() } });
   if (before) {
     await writeAdminEvent({
