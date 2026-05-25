@@ -12,6 +12,30 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import {
+  EFFECTIVE_LEVELS,
+  EFFECTIVE_LEVEL_LABEL,
+  effectiveLevelsFor,
+  type EffectiveLevel,
+  type PermissionLevel,
+} from "@/app/(dashboard)/permissions/permissions-types";
+
+// Canonical raw level we PATCH when the admin picks an effective bucket.
+// The MCP proxy only does set-membership on the tool's required level
+// (see app/api/mcp/route.ts), so any of insert/update/execute works for
+// "Edit". We pick "update" as the most common write op.
+const EFFECTIVE_TO_RAW: Record<EffectiveLevel, PermissionLevel> = {
+  view: "select",
+  edit: "update",
+  delete: "delete",
+};
+
+function rawToEffective(raw: string): EffectiveLevel {
+  const set = effectiveLevelsFor([raw.toLowerCase() as PermissionLevel]);
+  // Single raw value always maps to exactly one effective level. Fall back
+  // to "view" for any unexpected string so the dropdown still renders.
+  return (set.values().next().value as EffectiveLevel | undefined) ?? "view";
+}
 
 type Tool = {
   name: string;
@@ -48,15 +72,17 @@ export function ToolsEditor({ dataSourceId }: { dataSourceId: string }) {
     void load();
   }, [load]);
 
-  async function changeLevel(toolName: string, level: string) {
+  async function changeLevel(toolName: string, effective: EffectiveLevel) {
     setSavingTool(toolName);
     try {
+      const rawLevel = EFFECTIVE_TO_RAW[effective];
       const res = await fetch(
         `/api/connections/${dataSourceId}/tools/${encodeURIComponent(toolName)}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ level }),
+          // API still accepts the raw 5-level string (UPPERCASE).
+          body: JSON.stringify({ level: rawLevel.toUpperCase() }),
         },
       );
       if (!res.ok) throw new Error("Failed");
@@ -141,19 +167,19 @@ export function ToolsEditor({ dataSourceId }: { dataSourceId: string }) {
                     </td>
                     <td className="border-b border-border px-3 py-2">
                       <Select
-                        value={t.level.toUpperCase()}
-                        onValueChange={(v) => changeLevel(t.name, v)}
+                        value={rawToEffective(t.level)}
+                        onValueChange={(v) => changeLevel(t.name, v as EffectiveLevel)}
                         disabled={savingTool === t.name}
                       >
                         <SelectTrigger className="h-8">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="SELECT">SELECT</SelectItem>
-                          <SelectItem value="INSERT">INSERT</SelectItem>
-                          <SelectItem value="UPDATE">UPDATE</SelectItem>
-                          <SelectItem value="DELETE">DELETE</SelectItem>
-                          <SelectItem value="EXECUTE">EXECUTE</SelectItem>
+                          {EFFECTIVE_LEVELS.map((l) => (
+                            <SelectItem key={l} value={l} className="uppercase">
+                              {EFFECTIVE_LEVEL_LABEL[l]}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </td>

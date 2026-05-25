@@ -7,6 +7,11 @@ import { Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  EFFECTIVE_LEVEL_LABEL,
+  effectiveLevelsFor,
+  type PermissionLevel,
+} from "@/app/(dashboard)/permissions/permissions-types";
 
 // Workspace memberships. Each row shows the workspace name + the user's
 // SQL-level data permissions in that workspace (SELECT / INSERT / etc.) +
@@ -94,9 +99,11 @@ export function UserWorkspacesCard({
                         no perms
                       </Badge>
                     ) : (
-                      w.permissions.map((p) => (
+                      Array.from(
+                        effectiveLevelsFor(w.permissions as PermissionLevel[]),
+                      ).map((p) => (
                         <Badge key={p} variant="outline" className="text-xs uppercase">
-                          {p}
+                          {EFFECTIVE_LEVEL_LABEL[p]}
                         </Badge>
                       ))
                     )}

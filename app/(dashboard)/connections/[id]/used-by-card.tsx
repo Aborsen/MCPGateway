@@ -15,6 +15,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  EFFECTIVE_LEVEL_LABEL,
+  effectiveLevelsFor,
+  type PermissionLevel,
+} from "@/app/(dashboard)/permissions/permissions-types";
 
 export type WorkspaceEntry = {
   id: string;
@@ -281,13 +286,17 @@ export function UsedByCard({
                                     no perms
                                   </Badge>
                                 ) : (
-                                  s.permissions.map((p) => (
+                                  Array.from(
+                                    effectiveLevelsFor(
+                                      s.permissions as PermissionLevel[],
+                                    ),
+                                  ).map((p) => (
                                     <Badge
                                       key={p}
                                       variant="outline"
                                       className="text-[10px] uppercase"
                                     >
-                                      {p}
+                                      {EFFECTIVE_LEVEL_LABEL[p]}
                                     </Badge>
                                   ))
                                 )}
