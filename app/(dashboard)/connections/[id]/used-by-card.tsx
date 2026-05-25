@@ -22,6 +22,7 @@ export type WorkspaceEntry = {
   workspaceName: string;
   memberCount: number;
   allowedTablesLabel: string;
+  allowedTables: string[] | null;
 };
 
 export type UserSource = {
@@ -30,6 +31,7 @@ export type UserSource = {
   workspaceName?: string;
   permissions: string[];
   allowedTablesLabel: string | null;
+  allowedTables: string[] | null;
 };
 
 export type UserEntry = {
@@ -203,7 +205,11 @@ export function UsedByCard({
                             {w.memberCount} member{w.memberCount === 1 ? "" : "s"}
                           </div>
                         </Link>
-                        <Badge variant="outline" className="ml-2 shrink-0 text-xs">
+                        <Badge
+                          variant="outline"
+                          className="ml-2 shrink-0 text-xs"
+                          title={w.allowedTables ? w.allowedTables.join(", ") : "All tables"}
+                        >
                           {w.allowedTablesLabel}
                         </Badge>
                       </li>
@@ -287,7 +293,12 @@ export function UsedByCard({
                                 )}
                               </div>
                               {s.allowedTablesLabel && (
-                                <span className="opacity-70">· {s.allowedTablesLabel}</span>
+                                <span
+                                  className="opacity-70"
+                                  title={s.allowedTables ? s.allowedTables.join(", ") : undefined}
+                                >
+                                  · {s.allowedTablesLabel}
+                                </span>
                               )}
                             </li>
                           ))}

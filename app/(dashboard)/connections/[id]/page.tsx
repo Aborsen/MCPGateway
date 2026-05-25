@@ -57,7 +57,10 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
       workspaceId: wds.workspaceId,
       workspaceName: wds.workspace.name,
       memberCount: wds.workspace.users.length,
-      allowedTablesLabel: tables ? `Tables: ${tables.join(", ")}` : "All tables",
+      allowedTablesLabel: tables
+        ? `${tables.length} ${tables.length === 1 ? "table" : "tables"}`
+        : "All tables",
+      allowedTables: tables,
     };
   });
 
@@ -73,6 +76,7 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
     workspaceName?: string;
     permissions: string[];
     allowedTablesLabel: string | null;
+    allowedTables: string[] | null;
   };
   type UserEntry = {
     userId: string;
@@ -95,7 +99,10 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
         workspaceId: wds.workspaceId,
         workspaceName: wds.workspace.name,
         permissions: parsePermissions(wu.permissions),
-        allowedTablesLabel: tables ? `Tables: ${tables.join(", ")}` : null,
+        allowedTablesLabel: tables
+          ? `${tables.length} ${tables.length === 1 ? "table" : "tables"}`
+          : null,
+        allowedTables: tables,
       });
       userMap.set(wu.userId, entry);
     }
@@ -111,7 +118,10 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
     entry.sources.push({
       kind: "direct",
       permissions: parsePermissions(g.permissions),
-      allowedTablesLabel: tables ? `Tables: ${tables.join(", ")}` : null,
+      allowedTablesLabel: tables
+        ? `${tables.length} ${tables.length === 1 ? "table" : "tables"}`
+        : null,
+      allowedTables: tables,
     });
     userMap.set(g.userId, entry);
   }
