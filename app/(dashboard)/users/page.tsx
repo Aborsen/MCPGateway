@@ -29,7 +29,7 @@ export default async function UsersPage() {
     primarySystemRoleFor(viewerId),
   ]);
 
-  const [users, activeRows, bulkAssignableRoles] = await Promise.all([
+  const [users, activeRows, bulkAssignableRoles, allAssignments] = await Promise.all([
     prisma.user.findMany({
       where: { deletedAt: null },
       orderBy: { createdAt: "asc" },
@@ -50,12 +50,18 @@ export default async function UsersPage() {
       },
       select: { payload: true },
     }),
-    // Roles offered by the bulk-assign picker. System roles only (workspace-
-    // scoped + custom roles need the per-user UI for context).
+    // Bulk-assign picker now shows every role (system + custom).
     prisma.role.findMany({
-      where: { isSystem: true },
-      orderBy: { name: "asc" },
-      select: { id: true, slug: true, name: true },
+      orderBy: [{ isSystem: "desc" }, { name: "asc" }],
+      select: { id: true, slug: true, name: true, isSystem: true },
+    }),
+    // All role assignments — used to show every role each user holds on
+    // the list (primary badge + "+N more" with a tooltip).
+    prisma.userRole.findMany({
+      include: {
+        role: { select: { slug: true, name: true, isSystem: true } },
+        workspace: { select: { name: true } },
+      },
     }),
   ]);
 
@@ -77,6 +83,19 @@ export default async function UsersPage() {
     roleCounts[slug] = (roleCounts[slug] ?? 0) + 1;
   }
 
+  // Group every UserRole assignment by user so the list can render the
+  // primary badge + "+N more" with a tooltip of every name.
+  const additionalByUserId = new Map<string, { name: string; isSystem: boolean; workspaceName: string | null }[]>();
+  for (const a of allAssignments) {
+    const arr = additionalByUserId.get(a.userId) ?? [];
+    arr.push({
+      name: a.role.name,
+      isSystem: a.role.isSystem,
+      workspaceName: a.workspace?.name ?? null,
+    });
+    additionalByUserId.set(a.userId, arr);
+  }
+
   return (
     <UsersList
       viewerRole={viewerRole}
@@ -92,6 +111,7 @@ export default async function UsersPage() {
         email: u.email,
         name: u.name,
         role: roleByUserId.get(u.id) ?? "USER",
+        allRoles: additionalByUserId.get(u.id) ?? [],
         workspaceCount: u._count.workspaceUsers,
         workspaceNames: u.workspaceUsers.map((w) => w.workspace.name),
         mcpStatus: activeAccountIds.has(u.id) ? "active" : "inactive",

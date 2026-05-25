@@ -21,11 +21,22 @@ import {
 } from "@/components/ui/select";
 import { ROLES, ROLE_LABEL } from "@/lib/rbac";
 
+export type AssignedRole = {
+  name: string;
+  isSystem: boolean;
+  workspaceName: string | null;
+};
+
 export type User = {
   id: string;
   email: string;
   name: string;
+  // Primary system role slug — uppercase legacy form (Owner, Admin, etc.).
+  // Displayed as the main badge in the list.
   role: string;
+  // Every UserRole the user holds (including the primary). Used to show
+  // "+N more" + the tooltip listing every role.
+  allRoles: AssignedRole[];
   workspaceCount: number;
   workspaceNames: string[];
   mcpStatus: "active" | "inactive";

@@ -2,52 +2,43 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { ROLES, ROLE_LABEL, badgeVariantFor, labelFor } from "@/lib/rbac";
+import { UserMcpUrl } from "./user-mcp-url";
 import { cn } from "@/lib/utils";
 
+// Account card. Role management was moved out — it lives in the
+// "Assigned roles" card below, which handles system + custom + scoped
+// roles in one place instead of duplicating a simple system-role select
+// here. The MCP connection URL was folded in (used to be a standalone
+// card).
 export function UserAccountCard({
   userId,
   email,
-  role,
   createdAt,
   suspended,
+  mcpUrl,
   viewerIsOwner,
-  viewerCanChangeRole,
   viewerCanSuspend,
   isSelf,
 }: {
   userId: string;
   email: string;
-  role: string;
   createdAt: string;
   suspended: boolean;
+  mcpUrl: string;
   viewerIsOwner: boolean;
-  viewerCanChangeRole: boolean;
   viewerCanSuspend: boolean;
   isSelf: boolean;
 }) {
   const router = useRouter();
-  const [currentRole, setCurrentRole] = useState(role);
   const [currentSuspended, setCurrentSuspended] = useState(suspended);
   const [pending, startTransition] = useTransition();
 
-  const isTargetOwner = currentRole === "OWNER";
-  // You can't change/suspend your own account, and only Owners can touch
-  // someone who's currently an Owner.
-  const canChangeRole =
-    viewerCanChangeRole && !isSelf && (viewerIsOwner || !isTargetOwner);
-  const canSuspend =
-    viewerCanSuspend && !isSelf && (viewerIsOwner || !isTargetOwner);
-  const assignableRoles = ROLES.filter((r) => r !== "OWNER" || viewerIsOwner);
+  // You can't suspend your own account. Touching an Owner requires Owner.
+  // (We don't know the target's role here anymore — the page passes
+  // viewerIsOwner so we can gate by viewer level; suspend on a non-Owner
+  // requires only viewerCanSuspend.)
+  const canSuspend = viewerCanSuspend && !isSelf && viewerIsOwner;
 
   async function patch(body: Record<string, unknown>): Promise<boolean> {
     const res = await fetch(`/api/users/${userId}`, {
@@ -63,15 +54,6 @@ export function UserAccountCard({
     return true;
   }
 
-  async function onRoleChange(next: string) {
-    if (next === currentRole) return;
-    const prev = currentRole;
-    setCurrentRole(next);
-    const ok = await patch({ role: next });
-    if (!ok) setCurrentRole(prev);
-    else startTransition(() => router.refresh());
-  }
-
   async function onSuspendToggle(next: boolean) {
     const prev = currentSuspended;
     setCurrentSuspended(next);
@@ -84,31 +66,14 @@ export function UserAccountCard({
     <Card>
       <CardHeader>
         <CardTitle>Account</CardTitle>
-        <CardDescription>Email, role, and account state.</CardDescription>
+        <CardDescription>
+          Email, account state, and this user&apos;s MCP connection URL.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
         <div className="flex justify-between">
           <span className="text-muted-foreground">Email</span>
           <span>{email}</span>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-muted-foreground">Role</span>
-          {canChangeRole ? (
-            <Select value={currentRole} onValueChange={onRoleChange} disabled={pending}>
-              <SelectTrigger className="h-8 w-[140px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {assignableRoles.map((r) => (
-                  <SelectItem key={r} value={r}>
-                    {ROLE_LABEL[r]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <Badge variant={badgeVariantFor(currentRole)}>{labelFor(currentRole)}</Badge>
-          )}
         </div>
         <div className="flex items-center justify-between">
           <div className="flex flex-col">
@@ -143,9 +108,16 @@ export function UserAccountCard({
         </div>
         {isSelf && (
           <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-            You can&apos;t change your own role or suspension state. Ask another admin.
+            You can&apos;t suspend your own account. Ask another admin.
           </p>
         )}
+
+        <div className="border-t border-border pt-3">
+          <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+            MCP connection URL
+          </div>
+          <UserMcpUrl url={mcpUrl} />
+        </div>
       </CardContent>
     </Card>
   );

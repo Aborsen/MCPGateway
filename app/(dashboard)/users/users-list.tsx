@@ -70,7 +70,7 @@ const ROLE_RANK: Record<string, number> = {
   USER: 5,
 };
 
-type BulkRoleOption = { id: string; slug: string; name: string };
+type BulkRoleOption = { id: string; slug: string; name: string; isSystem: boolean };
 
 export function UsersList({
   initial,
@@ -101,6 +101,7 @@ export function UsersList({
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [, startTransition] = useTransition();
 
   const filtered = useMemo(() => {
@@ -232,19 +233,31 @@ export function UsersList({
           </Select>
         </div>
 
-        {viewerCanManageAssignments && selectedIds.size > 0 && (
+        {(viewerCanManageAssignments || viewerCanDelete) && selectedIds.size > 0 && (
           <div className="flex items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
             <span>
               <strong>{selectedIds.size}</strong> selected
             </span>
             <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                onClick={() => setBulkDialogOpen(true)}
-                disabled={bulkAssignableRoles.length === 0}
-              >
-                Assign role to {selectedIds.size}…
-              </Button>
+              {viewerCanManageAssignments && (
+                <Button
+                  size="sm"
+                  onClick={() => setBulkDialogOpen(true)}
+                  disabled={bulkAssignableRoles.length === 0}
+                >
+                  Assign role to {selectedIds.size}…
+                </Button>
+              )}
+              {viewerCanDelete && viewerIsOwner && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setBulkDeleteConfirmOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete {selectedIds.size}…
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -374,7 +387,7 @@ export function UsersList({
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{u.email}</td>
                     <td className="px-4 py-3">
-                      <Badge variant={badgeVariantFor(u.role)}>{labelFor(u.role)}</Badge>
+                      <RoleCell primary={u.role} allRoles={u.allRoles} />
                     </td>
                     <td className="px-4 py-3">
                       <WorkspacesCell
@@ -485,6 +498,18 @@ export function UsersList({
           startTransition(() => router.refresh());
         }}
       />
+
+      <BulkDeleteDialog
+        open={bulkDeleteConfirmOpen}
+        onOpenChange={setBulkDeleteConfirmOpen}
+        userIds={Array.from(selectedIds)}
+        selfId={viewerId}
+        onSaved={(failedIds) => {
+          setBulkDeleteConfirmOpen(false);
+          setSelectedIds(new Set(failedIds));
+          startTransition(() => router.refresh());
+        }}
+      />
     </TooltipProvider>
   );
 }
@@ -545,13 +570,18 @@ function BulkAssignRoleDialog({
     }
   }
 
+  const selectedRole = roles.find((r) => r.id === roleId);
+  const behavior = selectedRole?.isSystem
+    ? "Replaces each user's primary system role."
+    : "Adds this custom role on top of each user's existing roles. Users already holding it are skipped.";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Assign role to {userIds.length} user{userIds.length === 1 ? "" : "s"}</DialogTitle>
           <DialogDescription>
-            Bulk assigns a system role globally. For workspace-scoped or custom roles, use a user&apos;s detail page.
+            Pick any role (system or custom). System roles replace the user&apos;s primary role; custom roles stack on top.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
@@ -565,10 +595,14 @@ function BulkAssignRoleDialog({
                 {roles.map((r) => (
                   <SelectItem key={r.id} value={r.id}>
                     {r.name}
+                    {r.isSystem ? "" : "  (custom)"}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {selectedRole && (
+              <p className="text-xs text-muted-foreground">{behavior}</p>
+            )}
           </div>
           {result && (
             <div className="rounded-md border border-border p-3 text-sm">
@@ -599,6 +633,122 @@ function BulkAssignRoleDialog({
             {!result && (
               <Button type="submit" disabled={!roleId || pending}>
                 {pending ? "Assigning…" : `Assign role`}
+              </Button>
+            )}
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BulkDeleteDialog({
+  open,
+  onOpenChange,
+  userIds,
+  selfId,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  userIds: string[];
+  selfId: string;
+  onSaved: (failedIds: string[]) => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const [result, setResult] = useState<
+    | null
+    | {
+        succeeded: number;
+        failed: number;
+        failedDetails: { userId: string; error: string }[];
+      }
+  >(null);
+
+  // Filter out the caller — the API skips it anyway but we surface this in
+  // the confirmation copy so it isn't a surprise.
+  const deletable = userIds.filter((id) => id !== selfId);
+  const selfIncluded = deletable.length !== userIds.length;
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setPending(true);
+    setResult(null);
+    try {
+      const res = await fetch(`/api/users/bulk-delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIds }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error ?? `Bulk delete failed (${res.status})`);
+        return;
+      }
+      const failedDetails = (data.results as { userId: string; ok: boolean; error?: string }[])
+        .filter((r) => !r.ok)
+        .map((r) => ({ userId: r.userId, error: r.error ?? "" }));
+      setResult({
+        succeeded: data.succeeded as number,
+        failed: data.failed as number,
+        failedDetails,
+      });
+      onSaved(failedDetails.map((f) => f.userId));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            Delete {deletable.length} user{deletable.length === 1 ? "" : "s"}?
+          </DialogTitle>
+          <DialogDescription>
+            Soft-deletes the selected users. They can no longer sign in or use MCP. This action is logged in the audit log.
+            {selfIncluded && " You're in the selection — your own account will be skipped."}
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-4">
+          {result && (
+            <div className="rounded-md border border-border p-3 text-sm">
+              <div>
+                <span className="font-medium text-success">{result.succeeded} deleted</span>
+                {result.failed > 0 && (
+                  <span className="ml-2 text-destructive">· {result.failed} failed</span>
+                )}
+              </div>
+              {result.failedDetails.length > 0 && (
+                <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+                  {result.failedDetails.slice(0, 5).map((f) => (
+                    <li key={f.userId}>
+                      <code>{f.userId.slice(0, 8)}</code>: {f.error}
+                    </li>
+                  ))}
+                  {result.failedDetails.length > 5 && (
+                    <li>+{result.failedDetails.length - 5} more…</li>
+                  )}
+                </ul>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              {result ? "Close" : "Cancel"}
+            </Button>
+            {!result && (
+              <Button
+                type="submit"
+                variant="destructive"
+                disabled={deletable.length === 0 || pending}
+              >
+                {pending
+                  ? "Deleting…"
+                  : `Delete ${deletable.length} user${deletable.length === 1 ? "" : "s"}`}
               </Button>
             )}
           </DialogFooter>
@@ -639,6 +789,57 @@ function SortHeader({
           ))}
       </button>
     </th>
+  );
+}
+
+function RoleCell({
+  primary,
+  allRoles,
+}: {
+  primary: string;
+  allRoles: { name: string; isSystem: boolean; workspaceName: string | null }[];
+}) {
+  // The primary system role (Owner > Admin > etc.) is the headline. Extra
+  // roles (additional system + every custom assignment) show as "+N" with a
+  // tooltip listing each by name + scope.
+  const extras = allRoles.filter((r) => {
+    if (!r.isSystem) return true;
+    // Multiple system roles are unusual but possible; drop only the one that
+    // matches the primary slug. Compare by uppercased name as a quick proxy
+    // — the seeded names are unique per slug.
+    return r.name.toUpperCase() !== primary;
+  });
+  const primaryBadge = (
+    <Badge variant={badgeVariantFor(primary)}>{labelFor(primary)}</Badge>
+  );
+  if (extras.length === 0) return primaryBadge;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex cursor-default items-center gap-1.5">
+          {primaryBadge}
+          <Badge variant="outline" className="text-[10px]">
+            +{extras.length}
+          </Badge>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" align="start">
+        <div className="space-y-1 text-xs">
+          <div className="font-medium">All roles</div>
+          {allRoles.map((r, i) => (
+            <div key={`${r.name}-${i}`} className="flex items-center gap-1.5">
+              <span>{r.name}</span>
+              {r.workspaceName ? (
+                <span className="text-muted-foreground">({r.workspaceName})</span>
+              ) : null}
+              {!r.isSystem && (
+                <span className="text-[10px] text-muted-foreground">custom</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

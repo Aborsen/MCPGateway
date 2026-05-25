@@ -46,17 +46,46 @@ export async function POST(request: Request) {
     }
   }
 
+  // System roles REPLACE the user's global system-role row (matches the
+  // single-user PATCH /api/users/[id] semantics). Custom roles ADD on top
+  // of the existing assignments (since a user can hold multiple custom
+  // roles at once).
+  const isSystemReplace = role.isSystem && workspaceId === null;
+
   const results: { userId: string; ok: boolean; error?: string; id?: string }[] = [];
   for (const userId of userIds) {
     try {
-      const assignment = await prisma.userRole.create({
-        data: {
-          userId,
-          roleId,
-          workspaceId: workspaceId ?? null,
-          grantedById: auth.user.id,
-        },
-      });
+      let assignmentId: string;
+      if (isSystemReplace) {
+        const [, created] = await prisma.$transaction([
+          prisma.userRole.deleteMany({
+            where: {
+              userId,
+              workspaceId: null,
+              role: { isSystem: true },
+            },
+          }),
+          prisma.userRole.create({
+            data: {
+              userId,
+              roleId,
+              workspaceId: null,
+              grantedById: auth.user.id,
+            },
+          }),
+        ]);
+        assignmentId = created.id;
+      } else {
+        const created = await prisma.userRole.create({
+          data: {
+            userId,
+            roleId,
+            workspaceId: workspaceId ?? null,
+            grantedById: auth.user.id,
+          },
+        });
+        assignmentId = created.id;
+      }
       await writeAdminEvent({
         actorId: auth.user.id,
         targetUserId: userId,
@@ -64,9 +93,14 @@ export async function POST(request: Request) {
         targetType: "role",
         targetId: roleId,
         targetLabel: role.name,
-        details: { role: role.name, workspaceId: workspaceId ?? null, bulk: true },
+        details: {
+          role: role.name,
+          workspaceId: workspaceId ?? null,
+          replaced: isSystemReplace,
+          bulk: true,
+        },
       });
-      results.push({ userId, ok: true, id: assignment.id });
+      results.push({ userId, ok: true, id: assignmentId });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       // P2002 = already assigned. Treat as a soft failure with a hint.

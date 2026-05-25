@@ -4,12 +4,10 @@ import { headers } from "next/headers";
 import { ChevronLeft } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { gatePermission } from "@/lib/auth";
-import { can, isOwnerUser, primarySystemRoleFor } from "@/lib/permissions/resolve";
+import { can, isOwnerUser } from "@/lib/permissions/resolve";
 import { PERMISSION_ENTRIES } from "@/lib/permissions/catalog";
 import { PageHeader } from "@/components/layouts/page-header";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { parsePermissions } from "@/lib/json";
-import { UserMcpUrl } from "./user-mcp-url";
 import { UserAccountCard } from "./user-account-card";
 import { UserWorkspacesCard } from "./user-workspaces-card";
 import { UserInfoCard } from "./user-info-card";
@@ -34,16 +32,13 @@ export default async function UserDetailPage({ params }: PageProps) {
   // client cards. They use these to enable/disable the inline editors,
   // the remove-from-workspace buttons, and the access controls.
   const [
-    viewerCanChangeRole,
     viewerCanSuspend,
     viewerCanRemoveMembership,
     viewerCanManageAssignments,
     viewerCanManageOverrides,
   ] = await Promise.all([
-    can(viewerId, "users.change_role"),
     can(viewerId, "users.suspend"),
     // Removing this user from a workspace requires workspaces.manage_members.
-    // PR2 checks the global grant; PR4 will use per-workspace canInWorkspace.
     can(viewerId, "workspaces.manage_members"),
     can(viewerId, "permissions.manage_assignments"),
     can(viewerId, "permissions.manage_overrides"),
@@ -64,10 +59,6 @@ export default async function UserDetailPage({ params }: PageProps) {
     },
   });
   if (!user) notFound();
-
-  // PR2b: User.role column dropped. The "primary" system role for display
-  // purposes (the badge in the Account card) comes from UserRole.
-  const targetPrimaryRole = await primarySystemRoleFor(id);
 
   const since24h = new Date(Date.now() - 86400_000);
   const since7d = new Date(Date.now() - 7 * 86400_000);
@@ -240,11 +231,10 @@ export default async function UserDetailPage({ params }: PageProps) {
         <UserAccountCard
           userId={user.id}
           email={user.email}
-          role={targetPrimaryRole}
           createdAt={user.createdAt.toISOString()}
           suspended={!!user.suspendedAt}
+          mcpUrl={mcpUrl}
           viewerIsOwner={viewerIsOwner}
-          viewerCanChangeRole={viewerCanChangeRole}
           viewerCanSuspend={viewerCanSuspend}
           isSelf={viewerId === user.id}
         />
@@ -266,20 +256,6 @@ export default async function UserDetailPage({ params }: PageProps) {
           workspaces={workspaces}
           canRemove={viewerCanRemoveMembership}
         />
-
-        <Card>
-          <CardHeader>
-            <CardTitle>MCP connection URL</CardTitle>
-            <CardDescription>
-              Paste this URL into Claude Code&apos;s{" "}
-              <span className="font-mono text-xs">.mcp.json</span>. Every user shares the same URL —
-              OAuth on first connect determines whose permissions apply.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <UserMcpUrl url={mcpUrl} />
-          </CardContent>
-        </Card>
 
         <AssignedRolesCard
           userId={user.id}
