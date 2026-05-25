@@ -10,6 +10,10 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { parsePermissions } from "@/lib/json";
 import { UserAccountCard } from "./user-account-card";
 import { UserWorkspacesCard } from "./user-workspaces-card";
+import {
+  UserConnectionsCard,
+  type ConnectionAccess,
+} from "./user-connections-card";
 import { UserInfoCard } from "./user-info-card";
 import {
   AssignedRolesCard,
@@ -55,6 +59,11 @@ export default async function UserDetailPage({ params }: PageProps) {
             },
           },
         },
+      },
+      // Direct grants (UserDataSourceAccess) feed the Connections card
+      // alongside workspace-derived access.
+      directGrants: {
+        include: { dataSource: true },
       },
     },
   });
@@ -138,12 +147,48 @@ export default async function UserDetailPage({ params }: PageProps) {
     workspaceId: wu.workspaceId,
     workspaceName: wu.workspace.name,
     permissions: parsePermissions(wu.permissions),
-    connectors: wu.workspace.dataSources.map((wds) => ({
-      id: wds.id,
-      name: wds.dataSource.name,
-      slug: wds.dataSource.slug,
-    })),
   }));
+
+  // Deduplicated connections aggregate. A connector appears once per
+  // user, with one source entry per path that grants access (each
+  // WorkspaceUser whose workspace includes it, plus any direct grant).
+  const connectionsByDsId = new Map<string, ConnectionAccess>();
+  for (const wu of user.workspaceUsers) {
+    const wsPerms = parsePermissions(wu.permissions);
+    for (const wds of wu.workspace.dataSources) {
+      const ds = wds.dataSource;
+      const entry = connectionsByDsId.get(ds.id) ?? {
+        dataSourceId: ds.id,
+        dataSourceName: ds.name,
+        dataSourceType: ds.type,
+        sources: [],
+      };
+      entry.sources.push({
+        kind: "workspace",
+        workspaceId: wu.workspaceId,
+        workspaceName: wu.workspace.name,
+        permissions: wsPerms,
+      });
+      connectionsByDsId.set(ds.id, entry);
+    }
+  }
+  for (const dg of user.directGrants) {
+    const ds = dg.dataSource;
+    const entry = connectionsByDsId.get(ds.id) ?? {
+      dataSourceId: ds.id,
+      dataSourceName: ds.name,
+      dataSourceType: ds.type,
+      sources: [],
+    };
+    entry.sources.push({
+      kind: "direct",
+      permissions: parsePermissions(dg.permissions),
+    });
+    connectionsByDsId.set(ds.id, entry);
+  }
+  const connections = Array.from(connectionsByDsId.values()).sort((a, b) =>
+    a.dataSourceName.localeCompare(b.dataSourceName),
+  );
 
   // Compute effective permissions with provenance. Mirrors the logic in
   // app/api/users/[id]/effective-permissions/route.ts but kept inline so
@@ -256,6 +301,8 @@ export default async function UserDetailPage({ params }: PageProps) {
           workspaces={workspaces}
           canRemove={viewerCanRemoveMembership}
         />
+
+        <UserConnectionsCard connections={connections} />
 
         <AssignedRolesCard
           userId={user.id}

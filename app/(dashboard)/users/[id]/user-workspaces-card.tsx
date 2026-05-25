@@ -7,12 +7,17 @@ import { Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
+// Workspace memberships. Each row shows the workspace name + the user's
+// SQL-level data permissions in that workspace (SELECT / INSERT / etc.) +
+// a hover-revealed remove button. Connectors live in a sibling card now;
+// this one stays focused on workspace membership.
+
 type Workspace = {
   membershipId: string;
   workspaceId: string;
   workspaceName: string;
   permissions: string[];
-  connectors: { id: string; name: string; slug: string }[];
 };
 
 export function UserWorkspacesCard({
@@ -29,7 +34,11 @@ export function UserWorkspacesCard({
   const [, startTransition] = useTransition();
 
   async function onRemove(w: Workspace) {
-    if (!confirm(`Remove this user from "${w.workspaceName}"? They lose all connector access from this workspace.`)) {
+    if (
+      !confirm(
+        `Remove this user from "${w.workspaceName}"? They lose all connector access from this workspace.`,
+      )
+    ) {
       return;
     }
     setRemovingId(w.workspaceId);
@@ -51,9 +60,9 @@ export function UserWorkspacesCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Workspaces &amp; connectors</CardTitle>
+        <CardTitle>Workspaces</CardTitle>
         <CardDescription>
-          Workspaces this user belongs to and the connectors they get access to via each.
+          Workspaces this user belongs to. Each grants MCP data permissions for the workspace&apos;s connectors.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -66,59 +75,43 @@ export function UserWorkspacesCard({
             to add this user.
           </p>
         ) : (
-          <ul className="space-y-3">
+          <ul className="space-y-2">
             {workspaces.map((w) => (
-              <li key={w.membershipId} className="group rounded-md border border-border p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <Link
-                    href={`/workspaces/${w.workspaceId}`}
-                    className="font-medium hover:text-primary"
-                  >
-                    {w.workspaceName}
-                  </Link>
-                  <div className="flex items-center gap-2">
-                    <div className="flex gap-1">
-                      {w.permissions.length === 0 ? (
-                        <Badge variant="outline" className="text-[10px]">
-                          no perms
+              <li
+                key={w.membershipId}
+                className="group flex items-center justify-between gap-2 rounded-md border border-border p-3"
+              >
+                <Link
+                  href={`/workspaces/${w.workspaceId}`}
+                  className="font-medium hover:text-primary"
+                >
+                  {w.workspaceName}
+                </Link>
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-1">
+                    {w.permissions.length === 0 ? (
+                      <Badge variant="outline" className="text-[10px]">
+                        no perms
+                      </Badge>
+                    ) : (
+                      w.permissions.map((p) => (
+                        <Badge key={p} variant="outline" className="text-xs uppercase">
+                          {p}
                         </Badge>
-                      ) : (
-                        w.permissions.map((p) => (
-                          <Badge key={p} variant="outline" className="text-xs uppercase">
-                            {p}
-                          </Badge>
-                        ))
-                      )}
-                    </div>
-                    {canRemove && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onRemove(w)}
-                        disabled={removingId === w.workspaceId}
-                        aria-label={`Remove from ${w.workspaceName}`}
-                        className="opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      ))
                     )}
                   </div>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {w.connectors.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">No connectors in this workspace yet.</span>
-                  ) : (
-                    w.connectors.map((c) => (
-                      <Link
-                        key={c.id}
-                        href={`/connections/${c.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Badge variant="secondary" className="text-xs hover:bg-secondary/70">
-                          {c.name}
-                        </Badge>
-                      </Link>
-                    ))
+                  {canRemove && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => onRemove(w)}
+                      disabled={removingId === w.workspaceId}
+                      aria-label={`Remove from ${w.workspaceName}`}
+                      className="opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
                   )}
                 </div>
               </li>
