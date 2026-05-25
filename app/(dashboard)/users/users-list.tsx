@@ -13,6 +13,7 @@ import {
   Download,
   ShieldOff,
   MoreHorizontal,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -329,7 +330,7 @@ export function UsersList({
                               Change role
                             </DropdownMenuSubTrigger>
                             <DropdownMenuPortal>
-                              <DropdownMenuSubContent className="w-44">
+                              <DropdownMenuSubContent className="w-56">
                                 {assignableRoles.map((r) => (
                                   <DropdownMenuItem
                                     key={r}
@@ -345,6 +346,13 @@ export function UsersList({
                                     {r === u.role ? "current" : ""}
                                   </DropdownMenuItem>
                                 ))}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onSelect={() => router.push(`/users/${u.id}/access`)}
+                                >
+                                  <ShieldCheck className="h-4 w-4" />
+                                  Custom roles & overrides…
+                                </DropdownMenuItem>
                               </DropdownMenuSubContent>
                             </DropdownMenuPortal>
                           </DropdownMenuSub>
