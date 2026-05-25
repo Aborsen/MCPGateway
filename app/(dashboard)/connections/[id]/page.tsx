@@ -20,8 +20,26 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
   const ds = await prisma.dataSource.findUnique({
     where: { id },
     include: {
-      workspaceDataSources: { include: { workspace: true } },
-      directGrants: { include: { user: true } },
+      workspaceDataSources: {
+        // Hide soft-deleted workspaces from this view.
+        where: { workspace: { deletedAt: null } },
+        include: {
+          workspace: {
+            include: {
+              // Workspace members feed the effective-users aggregate.
+              // Filter to non-deleted users so removed accounts don't linger.
+              users: {
+                where: { user: { deletedAt: null } },
+                include: { user: true },
+              },
+            },
+          },
+        },
+      },
+      directGrants: {
+        where: { user: { deletedAt: null } },
+        include: { user: true },
+      },
     },
   });
   if (!ds) notFound();
@@ -32,22 +50,69 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
       id: wds.id,
       workspaceId: wds.workspaceId,
       workspaceName: wds.workspace.name,
+      memberCount: wds.workspace.users.length,
       allowedTablesLabel: tables ? `Tables: ${tables.join(", ")}` : "All tables",
     };
   });
 
-  const directGrants = ds.directGrants.map((g) => {
-    const perms = parsePermissions(g.permissions);
-    const tables = parseAllowedTables(g.allowedTables);
-    return {
-      id: g.id,
+  // Aggregate every user who can reach this connector. Each user appears
+  // once with one source entry per path that grants them access:
+  //   - Workspace membership (with the SQL-level perms set on WorkspaceUser)
+  //   - Direct grant (UserDataSourceAccess)
+  // The UI annotates each row with its sources so the "why does X have
+  // access?" question is answerable at a glance.
+  type UserSource = {
+    kind: "workspace" | "direct";
+    workspaceId?: string;
+    workspaceName?: string;
+    permissions: string[];
+    allowedTablesLabel: string | null;
+  };
+  type UserEntry = {
+    userId: string;
+    userName: string;
+    userEmail: string;
+    sources: UserSource[];
+  };
+  const userMap = new Map<string, UserEntry>();
+  for (const wds of ds.workspaceDataSources) {
+    for (const wu of wds.workspace.users) {
+      const entry = userMap.get(wu.userId) ?? {
+        userId: wu.userId,
+        userName: wu.user.name,
+        userEmail: wu.user.email,
+        sources: [],
+      };
+      const tables = parseAllowedTables(wds.allowedTables);
+      entry.sources.push({
+        kind: "workspace",
+        workspaceId: wds.workspaceId,
+        workspaceName: wds.workspace.name,
+        permissions: parsePermissions(wu.permissions),
+        allowedTablesLabel: tables ? `Tables: ${tables.join(", ")}` : null,
+      });
+      userMap.set(wu.userId, entry);
+    }
+  }
+  for (const g of ds.directGrants) {
+    const entry = userMap.get(g.userId) ?? {
       userId: g.userId,
       userName: g.user.name,
       userEmail: g.user.email,
-      permissionsLabel: perms.join(", "),
-      allowedTablesLabel: tables ? `Tables: ${tables.join(", ")}` : null,
+      sources: [],
     };
-  });
+    const tables = parseAllowedTables(g.allowedTables);
+    entry.sources.push({
+      kind: "direct",
+      permissions: parsePermissions(g.permissions),
+      allowedTablesLabel: tables ? `Tables: ${tables.join(", ")}` : null,
+    });
+    userMap.set(g.userId, entry);
+  }
+  const users = Array.from(userMap.values()).sort((a, b) =>
+    a.userName.localeCompare(b.userName),
+  );
+  const directGrantCount = ds.directGrants.length;
 
   return (
     <>
@@ -118,7 +183,11 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        <UsedByCard workspaces={workspaces} directGrants={directGrants} />
+        <UsedByCard
+          workspaces={workspaces}
+          users={users}
+          directGrantCount={directGrantCount}
+        />
       </div>
     </>
   );
