@@ -9,7 +9,6 @@ import {
   ShieldCheck,
   Lock,
   Download,
-  AlertCircle,
   Search,
   ChevronUp,
   ChevronDown,
@@ -68,12 +67,10 @@ export function RolesView({
   initial,
   catalog,
   canManage,
-  uncoveredPermissionKeys,
 }: {
   initial: Role[];
   catalog: PermissionEntry[];
   canManage: boolean;
-  uncoveredPermissionKeys: string[];
 }) {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -157,44 +154,6 @@ export function RolesView({
   return (
     <TooltipProvider delayDuration={150}>
       <div className="space-y-4 p-6">
-        {/* Catalog-coverage banner */}
-        {uncoveredPermissionKeys.length > 0 && customCount > 0 && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-            <div className="flex-1">
-              <div className="font-medium">
-                {uncoveredPermissionKeys.length} permission
-                {uncoveredPermissionKeys.length === 1 ? "" : "s"} not granted by any custom role
-              </div>
-              <div className="text-xs text-muted-foreground">
-                New permission keys are typically added during a release. System
-                roles are reconciled automatically; review your custom roles and
-                grant the new keys if they apply.
-              </div>
-              <details className="mt-2 text-xs">
-                <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">
-                  Show {uncoveredPermissionKeys.length > 12 ? "first 12" : "all"}
-                </summary>
-                <ul className="mt-2 flex flex-wrap gap-1">
-                  {uncoveredPermissionKeys.slice(0, 12).map((k) => (
-                    <code
-                      key={k}
-                      className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]"
-                    >
-                      {k}
-                    </code>
-                  ))}
-                  {uncoveredPermissionKeys.length > 12 && (
-                    <span className="text-muted-foreground">
-                      +{uncoveredPermissionKeys.length - 12} more
-                    </span>
-                  )}
-                </ul>
-              </details>
-            </div>
-          </div>
-        )}
-
         {/* Summary chips */}
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <Badge variant="secondary" className="text-[10px]">
