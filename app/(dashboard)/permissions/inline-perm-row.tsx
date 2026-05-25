@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, Check, FolderTree, MoreHorizontal, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, FolderTree, MoreHorizontal, Pencil, Sparkles, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +22,7 @@ import {
 import { LEVELS, LEVEL_LABEL, type GrantCell, type GrantSource, type PermissionLevel } from "./permissions-types";
 
 type WorkspaceSource = Extract<GrantSource, { kind: "workspace" }>;
+type EditingState = { source: WorkspaceSource; initialPerms: PermissionLevel[] };
 
 // Reusable row showing a single (user × connection) grant with R/W/D toggle pills.
 // Used in both By User and By Connection right-pane lists.
@@ -52,9 +53,22 @@ export function InlinePermRow({
   )) ?? [];
   const workspaceOnly = !directSource && workspaceSources.length > 0;
   const [busy, setBusy] = useState(false);
-  const [editing, setEditing] = useState<WorkspaceSource | null>(null);
+  const [editing, setEditing] = useState<EditingState | null>(null);
   const effective = new Set<PermissionLevel>(cell?.permissions ?? []);
   const directPerms = new Set<PermissionLevel>(directSource?.permissions ?? []);
+
+  const chipsClickable = !!onSaveWorkspace;
+  const canEditWorkspace = workspaceOnly && chipsClickable;
+  const singleWorkspace = workspaceSources.length === 1 ? workspaceSources[0] : null;
+
+  function openWorkspaceEdit(source: WorkspaceSource, togglePerm?: PermissionLevel) {
+    const next = new Set(source.permissions);
+    if (togglePerm) {
+      if (next.has(togglePerm)) next.delete(togglePerm);
+      else next.add(togglePerm);
+    }
+    setEditing({ source, initialPerms: Array.from(next) });
+  }
 
   async function toggleDirect(p: PermissionLevel) {
     if (workspaceOnly) return;
@@ -68,8 +82,6 @@ export function InlinePermRow({
       setBusy(false);
     }
   }
-
-  const chipsClickable = !!onSaveWorkspace;
 
   return (
     <div
@@ -95,7 +107,7 @@ export function InlinePermRow({
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {workspaceSources.map((s) => {
               const chipClass =
-                "inline-flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground";
+                "group inline-flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground";
               const inner = (
                 <>
                   <FolderTree className="h-2.5 w-2.5" />
@@ -108,11 +120,12 @@ export function InlinePermRow({
                 <button
                   key={s.workspaceId}
                   type="button"
-                  onClick={() => setEditing(s)}
+                  onClick={() => openWorkspaceEdit(s)}
                   className={cn(chipClass, "transition-colors hover:bg-secondary/70 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1")}
                   title={`Click to edit ${s.workspaceName} workspace permissions`}
                 >
                   {inner}
+                  <Pencil className="h-2.5 w-2.5 opacity-0 transition-opacity group-hover:opacity-60" />
                 </button>
               ) : (
                 <span key={s.workspaceId} className={chipClass}>
@@ -127,36 +140,82 @@ export function InlinePermRow({
         {LEVELS.map((p) => {
           const isEffective = effective.has(p);
           const isDirect = directPerms.has(p);
-          return (
-            <button
-              key={p}
-              onClick={() => toggleDirect(p)}
-              disabled={busy || workspaceOnly}
-              title={
-                workspaceOnly
-                  ? `Managed by Workspace — edit on the workspace page`
-                  : isDirect
-                    ? `Direct grant: ${LEVEL_LABEL[p]}`
-                    : isEffective
-                      ? `Via workspace: ${LEVEL_LABEL[p]} (click to add direct grant)`
-                      : `Click to grant ${LEVEL_LABEL[p]}`
-              }
-              className={cn(
-                "inline-flex h-7 w-[88px] items-center justify-center gap-1 rounded-md border px-2 text-[11px] font-medium uppercase tracking-wide transition-colors",
-                isDirect && "border-primary bg-primary text-primary-foreground",
-                !isDirect && isEffective && !workspaceOnly && "border-success/60 bg-success/15 text-success",
-                !isDirect && isEffective && workspaceOnly && "border-border bg-muted/40 text-muted-foreground cursor-not-allowed",
-                !isDirect && !isEffective && !workspaceOnly && "border-border text-muted-foreground hover:bg-muted",
-                !isDirect && !isEffective && workspaceOnly && "border-border/60 text-muted-foreground/60 cursor-not-allowed",
-                busy && "opacity-60",
-              )}
-            >
+
+          const pillClass = cn(
+            "inline-flex h-7 w-[88px] items-center justify-center gap-1 rounded-md border px-2 text-[11px] font-medium uppercase tracking-wide transition-colors",
+            isDirect && "border-primary bg-primary text-primary-foreground",
+            !isDirect && isEffective && !workspaceOnly && "border-success/60 bg-success/15 text-success",
+            !isDirect && isEffective && workspaceOnly && canEditWorkspace && "border-secondary-foreground/30 bg-secondary text-secondary-foreground hover:bg-secondary/70 cursor-pointer",
+            !isDirect && isEffective && workspaceOnly && !canEditWorkspace && "border-border bg-muted/40 text-muted-foreground cursor-not-allowed",
+            !isDirect && !isEffective && !workspaceOnly && "border-border text-muted-foreground hover:bg-muted",
+            !isDirect && !isEffective && workspaceOnly && canEditWorkspace && "border-dashed border-border text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer",
+            !isDirect && !isEffective && workspaceOnly && !canEditWorkspace && "border-border/60 text-muted-foreground/60 cursor-not-allowed",
+            busy && "opacity-60",
+          );
+
+          const pillTitle = workspaceOnly
+            ? canEditWorkspace
+              ? singleWorkspace
+                ? `Via ${singleWorkspace.workspaceName}: ${LEVEL_LABEL[p]} — click to edit workspace permissions`
+                : `Via workspace: ${LEVEL_LABEL[p]} — click to pick which workspace to edit`
+              : `Managed by Workspace — edit on the workspace page`
+            : isDirect
+              ? `Direct grant: ${LEVEL_LABEL[p]}`
+              : isEffective
+                ? `Via workspace: ${LEVEL_LABEL[p]} (click to add direct grant)`
+                : `Click to grant ${LEVEL_LABEL[p]}`;
+
+          const pillContent = (
+            <>
               {/* Always reserve a 12px slot for the check so pill width
                   stays constant whether the permission is active or not. */}
               <span className="inline-flex w-3 shrink-0 items-center justify-center">
                 {isEffective ? <Check className="h-3 w-3" /> : null}
               </span>
               {LEVEL_LABEL[p]}
+            </>
+          );
+
+          // Multi-workspace case: pill becomes a dropdown trigger so the user
+          // picks which workspace's permissions to edit before the dialog opens.
+          if (workspaceOnly && canEditWorkspace && !singleWorkspace) {
+            return (
+              <DropdownMenu key={p}>
+                <DropdownMenuTrigger asChild>
+                  <button disabled={busy} title={pillTitle} className={pillClass}>
+                    {pillContent}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {workspaceSources.map((s) => (
+                    <DropdownMenuItem
+                      key={s.workspaceId}
+                      onSelect={() => openWorkspaceEdit(s, p)}
+                    >
+                      <FolderTree className="h-3.5 w-3.5" />
+                      Edit via {s.workspaceName}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            );
+          }
+
+          return (
+            <button
+              key={p}
+              onClick={() => {
+                if (workspaceOnly && canEditWorkspace && singleWorkspace) {
+                  openWorkspaceEdit(singleWorkspace, p);
+                  return;
+                }
+                toggleDirect(p);
+              }}
+              disabled={busy || (workspaceOnly && !canEditWorkspace)}
+              title={pillTitle}
+              className={pillClass}
+            >
+              {pillContent}
             </button>
           );
         })}
@@ -184,12 +243,13 @@ export function InlinePermRow({
       </div>
       {chipsClickable && editing && (
         <WorkspacePermDialog
-          source={editing}
+          source={editing.source}
+          initialPerms={editing.initialPerms}
           userLabel={userLabel ?? "this user"}
           connectionLabel={connectionLabel ?? label}
           onClose={() => setEditing(null)}
           onSave={async (perms) => {
-            await onSaveWorkspace!(editing.workspaceId, perms);
+            await onSaveWorkspace!(editing.source.workspaceId, perms);
             setEditing(null);
           }}
         />
@@ -200,25 +260,27 @@ export function InlinePermRow({
 
 function WorkspacePermDialog({
   source,
+  initialPerms,
   userLabel,
   connectionLabel,
   onClose,
   onSave,
 }: {
   source: WorkspaceSource;
+  initialPerms: PermissionLevel[];
   userLabel: string;
   connectionLabel: string;
   onClose: () => void;
   onSave: (perms: PermissionLevel[]) => Promise<void>;
 }) {
-  const [selected, setSelected] = useState<Set<PermissionLevel>>(new Set(source.permissions));
+  const [selected, setSelected] = useState<Set<PermissionLevel>>(new Set(initialPerms));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setSelected(new Set(source.permissions));
+    setSelected(new Set(initialPerms));
     setError(null);
-  }, [source]);
+  }, [source, initialPerms]);
 
   function toggle(p: PermissionLevel) {
     const next = new Set(selected);
@@ -238,7 +300,11 @@ function WorkspacePermDialog({
     }
   }
 
+  const original = new Set(source.permissions);
   const willRemove = selected.size === 0;
+  const changed =
+    selected.size !== original.size ||
+    Array.from(selected).some((p) => !original.has(p));
 
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
@@ -263,17 +329,27 @@ function WorkspacePermDialog({
         <div className="flex flex-wrap gap-2">
           {LEVELS.map((p) => {
             const on = selected.has(p);
+            const wasOn = original.has(p);
+            const diff = on !== wasOn;
             return (
               <button
                 key={p}
                 type="button"
                 onClick={() => toggle(p)}
                 disabled={pending}
+                title={
+                  diff
+                    ? on
+                      ? `${LEVEL_LABEL[p]} — will be added`
+                      : `${LEVEL_LABEL[p]} — will be removed`
+                    : LEVEL_LABEL[p]
+                }
                 className={cn(
-                  "inline-flex h-8 w-[100px] items-center justify-center gap-1 rounded-md border px-2 text-xs font-medium uppercase tracking-wide transition-colors",
+                  "relative inline-flex h-8 w-[100px] items-center justify-center gap-1 rounded-md border px-2 text-xs font-medium uppercase tracking-wide transition-colors",
                   on
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border text-muted-foreground hover:bg-muted",
+                  diff && "ring-2 ring-amber-500/60 ring-offset-1 ring-offset-card",
                   pending && "opacity-60",
                 )}
               >
@@ -299,7 +375,7 @@ function WorkspacePermDialog({
           <Button
             type="button"
             onClick={submit}
-            disabled={pending}
+            disabled={pending || !changed}
             variant={willRemove ? "destructive" : "default"}
           >
             {pending ? "Saving…" : willRemove ? "Remove from workspace" : "Save changes"}
