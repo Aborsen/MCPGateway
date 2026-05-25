@@ -70,6 +70,11 @@ type RoleOption = { id: string; slug: string; name: string; isSystem: boolean };
 type WorkspaceOption = { id: string; name: string };
 type CatalogEntry = { key: string; label: string; category: string; scopeable: boolean };
 
+// Radix Select disallows empty-string values (used internally to mean
+// "cleared"). Use a sentinel for "no workspace scope" and translate to
+// null at the boundary when submitting.
+const GLOBAL_SCOPE = "__global__";
+
 export function UserAccessView({
   userId,
   canManageAssignments,
@@ -425,7 +430,7 @@ function AddRoleDialog({
   onSaved: () => void;
 }) {
   const [roleId, setRoleId] = useState<string>("");
-  const [workspaceId, setWorkspaceId] = useState<string>("");
+  const [workspaceId, setWorkspaceId] = useState<string>(GLOBAL_SCOPE);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -439,7 +444,7 @@ function AddRoleDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           roleId,
-          workspaceId: workspaceId || null,
+          workspaceId: workspaceId === GLOBAL_SCOPE ? null : workspaceId,
         }),
       });
       if (!res.ok) {
@@ -484,10 +489,10 @@ function AddRoleDialog({
             <Label htmlFor="add-role-ws">Workspace scope (optional)</Label>
             <Select value={workspaceId} onValueChange={setWorkspaceId}>
               <SelectTrigger id="add-role-ws">
-                <SelectValue placeholder="Global (no workspace)" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Global</SelectItem>
+                <SelectItem value={GLOBAL_SCOPE}>Global (no workspace)</SelectItem>
                 {workspaces.map((w) => (
                   <SelectItem key={w.id} value={w.id}>
                     {w.name}
@@ -535,7 +540,7 @@ function AddOverrideDialog({
   onSaved: () => void;
 }) {
   const [permissionKey, setPermissionKey] = useState<string>("");
-  const [workspaceId, setWorkspaceId] = useState<string>("");
+  const [workspaceId, setWorkspaceId] = useState<string>(GLOBAL_SCOPE);
   const [effect, setEffect] = useState<"GRANT" | "REVOKE">("GRANT");
   const [reason, setReason] = useState("");
   const [pending, setPending] = useState(false);
@@ -553,7 +558,7 @@ function AddOverrideDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           permissionKey,
-          workspaceId: workspaceId || null,
+          workspaceId: workspaceId === GLOBAL_SCOPE ? null : workspaceId,
           effect,
           reason,
         }),
@@ -563,7 +568,7 @@ function AddOverrideDialog({
         throw new Error(data.error ?? `Failed (${res.status})`);
       }
       setPermissionKey("");
-      setWorkspaceId("");
+      setWorkspaceId(GLOBAL_SCOPE);
       setReason("");
       setEffect("GRANT");
       onSaved();
@@ -612,10 +617,10 @@ function AddOverrideDialog({
               <Label htmlFor="ov-ws">Workspace scope (optional)</Label>
               <Select value={workspaceId} onValueChange={setWorkspaceId} disabled={!selectedEntry?.scopeable}>
                 <SelectTrigger id="ov-ws">
-                  <SelectValue placeholder="Global" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Global</SelectItem>
+                  <SelectItem value={GLOBAL_SCOPE}>Global</SelectItem>
                   {workspaces.map((w) => (
                     <SelectItem key={w.id} value={w.id}>
                       {w.name}
