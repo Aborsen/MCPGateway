@@ -296,14 +296,6 @@ export default async function UserDetailPage({ params }: PageProps) {
           }))}
         />
 
-        <UserWorkspacesCard
-          userId={user.id}
-          workspaces={workspaces}
-          canRemove={viewerCanRemoveMembership}
-        />
-
-        <UserConnectionsCard connections={connections} />
-
         <AssignedRolesCard
           userId={user.id}
           canManage={viewerCanManageAssignments}
@@ -346,6 +338,14 @@ export default async function UserDetailPage({ params }: PageProps) {
             scopeable: p.scopeable,
           }))}
         />
+
+        <UserWorkspacesCard
+          userId={user.id}
+          workspaces={workspaces}
+          canRemove={viewerCanRemoveMembership}
+        />
+
+        <UserConnectionsCard connections={connections} />
 
         <EffectivePermissionsCard effective={effective} className="lg:col-span-2" />
       </div>
