@@ -1,16 +1,15 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
-import { ChevronLeft, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { gatePermission, auth } from "@/lib/auth";
 import { can } from "@/lib/permissions/resolve";
-import { PageHeader } from "@/components/layouts/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { parseAllowedTables, parsePermissions } from "@/lib/json";
 import { ToolsEditor } from "./tools-editor";
 import { UsedByCard } from "./used-by-card";
 import { TablesViewer } from "@/components/tables-viewer";
 import { BlockedTablesEditor } from "./blocked-tables-editor";
+import { ConnectionHeader } from "./connection-header";
 
 export const dynamic = "force-dynamic";
 
@@ -125,18 +124,11 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
 
   return (
     <>
-      <PageHeader
-        title={ds.name}
-        description={ds.description ?? `Upstream MCP server (${ds.type})`}
-        actions={
-          <Link
-            href="/connections"
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Back
-          </Link>
-        }
+      <ConnectionHeader
+        connectionId={ds.id}
+        initialName={ds.name}
+        initialDescription={ds.description}
+        canEdit={canEditConnection}
       />
 
       <div className="grid gap-6 p-6 lg:grid-cols-3">

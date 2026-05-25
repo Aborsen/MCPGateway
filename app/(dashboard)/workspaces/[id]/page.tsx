@@ -1,15 +1,13 @@
 import { notFound, redirect } from "next/navigation";
-import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { canInWorkspace, can } from "@/lib/permissions/resolve";
-import { PageHeader } from "@/components/layouts/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { parsePermissions, parseAllowedTables } from "@/lib/json";
 import { WorkspaceEditor } from "./workspace-editor";
 import { WorkspaceMcpUrl } from "./workspace-mcp-url";
 import { WorkspaceAdminsCard } from "./workspace-admins-card";
+import { WorkspaceHeader } from "./workspace-header";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +31,12 @@ export default async function WorkspaceDetailPage({ params }: PageProps) {
     id,
   );
   const canViewUsers = await can(session.user.id, "users.view");
+  // Drives the inline-edit affordance on the header.
+  const canEditDetails = await canInWorkspace(
+    session.user.id,
+    "workspaces.update",
+    id,
+  );
 
   const [workspace, allDataSources, allUsers, workspaceAdminRole, workspaceMemberRole, scopedAssignments] =
     await Promise.all([
@@ -69,18 +73,11 @@ export default async function WorkspaceDetailPage({ params }: PageProps) {
 
   return (
     <>
-      <PageHeader
-        title={workspace.name}
-        description={workspace.description ?? "Workspace details"}
-        actions={
-          <Link
-            href="/workspaces"
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Back to workspaces
-          </Link>
-        }
+      <WorkspaceHeader
+        workspaceId={workspace.id}
+        initialName={workspace.name}
+        initialDescription={workspace.description}
+        canEdit={canEditDetails}
       />
 
       <div className="space-y-6 p-6">

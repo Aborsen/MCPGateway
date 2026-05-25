@@ -49,8 +49,8 @@ export function WorkspaceEditor({
   allUsers: UserOption[];
 }) {
   const router = useRouter();
-  const [name, setName] = useState(workspace.name);
-  const [description, setDescription] = useState(workspace.description ?? "");
+  // Name + description are edited inline in the page header now; this
+  // editor only owns the data-sources and per-member permissions blocks.
   const [dataSources, setDataSources] = useState(workspace.dataSources);
   // Internal state uses EffectiveLevel buckets. We convert on initial load
   // and again on save.
@@ -157,8 +157,6 @@ export function WorkspaceEditor({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name,
-          description: description || null,
           dataSources,
           users: users.map((u) => ({
             userId: u.userId,
@@ -182,33 +180,6 @@ export function WorkspaceEditor({
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Details</CardTitle>
-        </CardHeader>
-        <CardContent className="grid items-start gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="w-name">Name</Label>
-            <Input
-              id="w-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="h-9"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="w-desc">Description</Label>
-            <Input
-              id="w-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional"
-              className="h-9"
-            />
-          </div>
-        </CardContent>
-      </Card>
-
       <Card>
         <CardHeader>
           <CardTitle>Data sources</CardTitle>
