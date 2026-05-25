@@ -642,6 +642,9 @@ function AddOverrideDialog({
   const [workspaceId, setWorkspaceId] = useState<string>(GLOBAL_SCOPE);
   const [effect, setEffect] = useState<"GRANT" | "REVOKE">("GRANT");
   const [reason, setReason] = useState("");
+  // Optional expiry. Empty string = never expires. ISO date input — the
+  // API converts to an end-of-day timestamp.
+  const [expiresOn, setExpiresOn] = useState<string>("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -652,6 +655,11 @@ function AddOverrideDialog({
     setPending(true);
     setError(null);
     try {
+      // Treat the date input as the user's local end-of-day so an override
+      // dated "2026-06-01" lasts through that whole day in their timezone.
+      const expiresAt = expiresOn
+        ? new Date(`${expiresOn}T23:59:59`).toISOString()
+        : null;
       const res = await fetch(`/api/users/${userId}/permission-overrides`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -660,6 +668,7 @@ function AddOverrideDialog({
           workspaceId: workspaceId === GLOBAL_SCOPE ? null : workspaceId,
           effect,
           reason,
+          expiresAt,
         }),
       });
       if (!res.ok) {
@@ -669,6 +678,7 @@ function AddOverrideDialog({
       setPermissionKey("");
       setWorkspaceId(GLOBAL_SCOPE);
       setReason("");
+      setExpiresOn("");
       setEffect("GRANT");
       onSaved();
     } catch (err) {
@@ -758,16 +768,28 @@ function AddOverrideDialog({
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="ov-reason">Reason (required)</Label>
-            <Input
-              id="ov-reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. on-call for the week ending 2026-06-01"
-              required
-              maxLength={500}
-            />
+          <div className="grid gap-3 sm:grid-cols-[1fr,180px]">
+            <div className="space-y-2">
+              <Label htmlFor="ov-reason">Reason (required)</Label>
+              <Input
+                id="ov-reason"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="e.g. on-call for the week ending 2026-06-01"
+                required
+                maxLength={500}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ov-expires">Expires on (optional)</Label>
+              <Input
+                id="ov-expires"
+                type="date"
+                value={expiresOn}
+                onChange={(e) => setExpiresOn(e.target.value)}
+                min={new Date().toISOString().slice(0, 10)}
+              />
+            </div>
           </div>
 
           {error && (

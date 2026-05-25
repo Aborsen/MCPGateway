@@ -10,13 +10,15 @@ export default async function UsersPage() {
   // Pre-compute UI-gating flags on the server so the client component can
   // render conditional menus / buttons synchronously.
   const viewerId = session.user.id;
-  const [viewerCanChangeRole, viewerCanDelete] = await Promise.all([
-    can(viewerId, "users.change_role"),
-    can(viewerId, "users.delete"),
-  ]);
+  const [viewerCanChangeRole, viewerCanDelete, viewerCanManageAssignments] =
+    await Promise.all([
+      can(viewerId, "users.change_role"),
+      can(viewerId, "users.delete"),
+      can(viewerId, "permissions.manage_assignments"),
+    ]);
   const viewerIsOwner = session.user.role === "OWNER";
 
-  const [users, activeRows, roleCounts] = await Promise.all([
+  const [users, activeRows, roleCounts, bulkAssignableRoles] = await Promise.all([
     prisma.user.findMany({
       where: { deletedAt: null },
       orderBy: { createdAt: "asc" },
@@ -42,6 +44,13 @@ export default async function UsersPage() {
       where: { deletedAt: null },
       _count: { _all: true },
     }),
+    // Roles offered by the bulk-assign picker. System roles only (workspace-
+    // scoped + custom roles need the per-user UI for context).
+    prisma.role.findMany({
+      where: { isSystem: true },
+      orderBy: { name: "asc" },
+      select: { id: true, slug: true, name: true },
+    }),
   ]);
 
   // Active = at least one unexpired OAuth AccessToken whose accountId matches.
@@ -61,6 +70,8 @@ export default async function UsersPage() {
       viewerIsOwner={viewerIsOwner}
       viewerCanChangeRole={viewerCanChangeRole}
       viewerCanDelete={viewerCanDelete}
+      viewerCanManageAssignments={viewerCanManageAssignments}
+      bulkAssignableRoles={bulkAssignableRoles}
       roleCounts={Object.fromEntries(roleCounts.map((r) => [r.role, r._count._all]))}
       initial={users.map((u) => ({
         id: u.id,

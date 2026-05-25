@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Pencil, Trash2, ShieldCheck, Lock } from "lucide-react";
+import { Plus, Pencil, Trash2, ShieldCheck, Lock, Download, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,10 +30,12 @@ export function RolesView({
   initial,
   catalog,
   canManage,
+  uncoveredPermissionKeys,
 }: {
   initial: Role[];
   catalog: PermissionEntry[];
   canManage: boolean;
+  uncoveredPermissionKeys: string[];
 }) {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -78,6 +80,43 @@ export function RolesView({
 
   return (
     <div className="space-y-4 p-6">
+      {uncoveredPermissionKeys.length > 0 && customCount > 0 && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+          <div className="flex-1">
+            <div className="font-medium">
+              {uncoveredPermissionKeys.length} permission
+              {uncoveredPermissionKeys.length === 1 ? "" : "s"} not granted by any custom role
+            </div>
+            <div className="text-xs text-muted-foreground">
+              New permission keys are typically added during a release. System
+              roles are reconciled automatically; review your custom roles and
+              grant the new keys if they apply.
+            </div>
+            <details className="mt-2 text-xs">
+              <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">
+                Show {uncoveredPermissionKeys.length > 12 ? "first 12" : "all"}
+              </summary>
+              <ul className="mt-2 flex flex-wrap gap-1">
+                {uncoveredPermissionKeys.slice(0, 12).map((k) => (
+                  <code
+                    key={k}
+                    className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]"
+                  >
+                    {k}
+                  </code>
+                ))}
+                {uncoveredPermissionKeys.length > 12 && (
+                  <span className="text-muted-foreground">
+                    +{uncoveredPermissionKeys.length - 12} more
+                  </span>
+                )}
+              </ul>
+            </details>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <Badge variant="secondary" className="text-[10px]">
@@ -92,6 +131,12 @@ export function RolesView({
           <FilterPill label="All" active={filter === "all"} onClick={() => setFilter("all")} />
           <FilterPill label="System" active={filter === "system"} onClick={() => setFilter("system")} />
           <FilterPill label="Custom" active={filter === "custom"} onClick={() => setFilter("custom")} />
+          <Button variant="outline" size="sm" asChild>
+            <a href="/api/access/export.csv" download>
+              <Download className="h-4 w-4" />
+              Access CSV
+            </a>
+          </Button>
           {canManage && (
             <Button onClick={onNew}>
               <Plus className="h-4 w-4" />

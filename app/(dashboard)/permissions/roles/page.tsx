@@ -23,6 +23,20 @@ export default async function RolesPage() {
     },
   });
 
+  // Catalog-version nudge: any permission key in the catalog that no
+  // *custom* role grants. Useful right after a release added a new
+  // permission — admins see a banner asking them to add the key to
+  // existing custom roles if applicable. System roles are reconciled
+  // automatically by the seed and ignored here.
+  const grantedByCustomRole = new Set<string>();
+  for (const r of roles) {
+    if (r.isSystem) continue;
+    for (const rp of r.rolePermissions) grantedByCustomRole.add(rp.permissionKey);
+  }
+  const uncoveredPermissionKeys = PERMISSION_ENTRIES.filter(
+    (p) => !grantedByCustomRole.has(p.key),
+  ).map((p) => p.key);
+
   return (
     <>
       <PageHeader
@@ -47,6 +61,7 @@ export default async function RolesPage() {
           permissions: r.rolePermissions.map((rp) => rp.permissionKey),
           assignmentCount: r._count.assignments,
         }))}
+        uncoveredPermissionKeys={uncoveredPermissionKeys}
       />
     </>
   );

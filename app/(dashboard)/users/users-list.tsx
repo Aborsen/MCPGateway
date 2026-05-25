@@ -44,6 +44,16 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { UserFormDialog, type User } from "./user-form";
 import { ROLES, ROLE_LABEL, badgeVariantFor, labelFor } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
@@ -60,6 +70,8 @@ const ROLE_RANK: Record<string, number> = {
   USER: 5,
 };
 
+type BulkRoleOption = { id: string; slug: string; name: string };
+
 export function UsersList({
   initial,
   viewerRole,
@@ -67,6 +79,8 @@ export function UsersList({
   viewerIsOwner,
   viewerCanChangeRole,
   viewerCanDelete,
+  viewerCanManageAssignments,
+  bulkAssignableRoles,
   roleCounts,
 }: {
   initial: User[];
@@ -75,6 +89,8 @@ export function UsersList({
   viewerIsOwner: boolean;
   viewerCanChangeRole: boolean;
   viewerCanDelete: boolean;
+  viewerCanManageAssignments: boolean;
+  bulkAssignableRoles: BulkRoleOption[];
   roleCounts: Record<string, number>;
 }) {
   const router = useRouter();
@@ -83,6 +99,8 @@ export function UsersList({
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "name", dir: "asc" });
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [, startTransition] = useTransition();
 
   const filtered = useMemo(() => {
@@ -214,10 +232,58 @@ export function UsersList({
           </Select>
         </div>
 
+        {viewerCanManageAssignments && selectedIds.size > 0 && (
+          <div className="flex items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
+            <span>
+              <strong>{selectedIds.size}</strong> selected
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => setBulkDialogOpen(true)}
+                disabled={bulkAssignableRoles.length === 0}
+              >
+                Assign role to {selectedIds.size}…
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Clear
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="overflow-hidden rounded-lg border border-border">
           <table className="w-full text-sm">
             <thead className="bg-muted text-muted-foreground">
               <tr className="text-left">
+                {viewerCanManageAssignments && (
+                  <th className="w-10 px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={
+                        filtered.length > 0 &&
+                        filtered.every((u) => selectedIds.has(u.id))
+                          ? true
+                          : filtered.some((u) => selectedIds.has(u.id))
+                            ? "indeterminate"
+                            : false
+                      }
+                      onCheckedChange={(v) => {
+                        const next = new Set(selectedIds);
+                        if (v === true) {
+                          for (const u of filtered) next.add(u.id);
+                        } else {
+                          for (const u of filtered) next.delete(u.id);
+                        }
+                        setSelectedIds(next);
+                      }}
+                      aria-label="Select all"
+                    />
+                  </th>
+                )}
                 <SortHeader label="Name" sortKey="name" sort={sort} onToggle={toggleSort} />
                 <SortHeader label="Email" sortKey="email" sort={sort} onToggle={toggleSort} />
                 <SortHeader label="Role" sortKey="role" sort={sort} onToggle={toggleSort} />
@@ -239,7 +305,10 @@ export function UsersList({
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
+                  <td
+                    colSpan={viewerCanManageAssignments ? 7 : 6}
+                    className="px-4 py-12 text-center text-muted-foreground"
+                  >
                     No users match.
                   </td>
                 </tr>
@@ -274,6 +343,20 @@ export function UsersList({
                       }
                     }}
                   >
+                    {viewerCanManageAssignments && (
+                      <td className="w-10 px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.has(u.id)}
+                          onCheckedChange={(v) => {
+                            const next = new Set(selectedIds);
+                            if (v === true) next.add(u.id);
+                            else next.delete(u.id);
+                            setSelectedIds(next);
+                          }}
+                          aria-label={`Select ${u.name}`}
+                        />
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <Link
                         href={`/users/${u.id}`}
@@ -389,7 +472,139 @@ export function UsersList({
           startTransition(() => router.refresh());
         }}
       />
+
+      <BulkAssignRoleDialog
+        open={bulkDialogOpen}
+        onOpenChange={setBulkDialogOpen}
+        roles={bulkAssignableRoles}
+        userIds={Array.from(selectedIds)}
+        onSaved={(failedIds) => {
+          setBulkDialogOpen(false);
+          // Keep failures selected so the admin sees which rows didn't take.
+          setSelectedIds(new Set(failedIds));
+          startTransition(() => router.refresh());
+        }}
+      />
     </TooltipProvider>
+  );
+}
+
+function BulkAssignRoleDialog({
+  open,
+  onOpenChange,
+  roles,
+  userIds,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  roles: BulkRoleOption[];
+  userIds: string[];
+  onSaved: (failedIds: string[]) => void;
+}) {
+  const [roleId, setRoleId] = useState<string>(() => roles[0]?.id ?? "");
+  const [pending, setPending] = useState(false);
+  const [result, setResult] = useState<
+    | null
+    | {
+        succeeded: number;
+        failed: number;
+        failedDetails: { userId: string; error: string }[];
+      }
+  >(null);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!roleId || userIds.length === 0) return;
+    setPending(true);
+    setResult(null);
+    try {
+      const res = await fetch(`/api/users/bulk-role-assignments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIds, roleId, workspaceId: null }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error ?? `Bulk assign failed (${res.status})`);
+        return;
+      }
+      const failedDetails = (data.results as { userId: string; ok: boolean; error?: string }[])
+        .filter((r) => !r.ok)
+        .map((r) => ({ userId: r.userId, error: r.error ?? "" }));
+      setResult({
+        succeeded: data.succeeded as number,
+        failed: data.failed as number,
+        failedDetails,
+      });
+      onSaved(failedDetails.map((f) => f.userId));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Assign role to {userIds.length} user{userIds.length === 1 ? "" : "s"}</DialogTitle>
+          <DialogDescription>
+            Bulk assigns a system role globally. For workspace-scoped or custom roles, use a user&apos;s detail page.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="bulk-role">Role</Label>
+            <Select value={roleId} onValueChange={setRoleId}>
+              <SelectTrigger id="bulk-role">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {roles.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {result && (
+            <div className="rounded-md border border-border p-3 text-sm">
+              <div>
+                <span className="font-medium text-success">{result.succeeded} succeeded</span>
+                {result.failed > 0 && (
+                  <span className="ml-2 text-destructive">· {result.failed} failed</span>
+                )}
+              </div>
+              {result.failedDetails.length > 0 && (
+                <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+                  {result.failedDetails.slice(0, 5).map((f) => (
+                    <li key={f.userId}>
+                      <code>{f.userId.slice(0, 8)}</code>: {f.error}
+                    </li>
+                  ))}
+                  {result.failedDetails.length > 5 && (
+                    <li>+{result.failedDetails.length - 5} more…</li>
+                  )}
+                </ul>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              {result ? "Close" : "Cancel"}
+            </Button>
+            {!result && (
+              <Button type="submit" disabled={!roleId || pending}>
+                {pending ? "Assigning…" : `Assign role`}
+              </Button>
+            )}
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
