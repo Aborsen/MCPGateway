@@ -14,6 +14,7 @@ import {
   ShieldOff,
   MoreHorizontal,
   ShieldCheck,
+  BadgeCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -169,7 +170,25 @@ export function UsersList({
     }
     startTransition(() => router.refresh());
   }
+  // Custom roles stack on top of the user's existing assignments. Same
+  // endpoint the access-card uses; the kebab is just a quick-add path.
+  async function onAddCustomRole(u: User, roleId: string) {
+    const res = await fetch(`/api/users/${u.id}/role-assignments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roleId, workspaceId: null }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error ?? `Assign failed (${res.status})`);
+      return;
+    }
+    startTransition(() => router.refresh());
+  }
 
+  // Custom roles offered in the kebab quick-assign submenu — derived from
+  // the all-roles list the page already sends down for bulk actions.
+  const customRolesForQuickAdd = bulkAssignableRoles.filter((r) => !r.isSystem);
   const visibleRoles = ROLES.filter((r) => (roleCounts[r] ?? 0) > 0);
 
   return (
@@ -422,11 +441,14 @@ export function UsersList({
                           </DropdownMenuItem>
                           <DropdownMenuSub>
                             <DropdownMenuSubTrigger disabled={!canEditRow}>
-                              <Pencil className="h-4 w-4" />
+                              <BadgeCheck className="h-4 w-4" />
                               Change role
                             </DropdownMenuSubTrigger>
                             <DropdownMenuPortal>
-                              <DropdownMenuSubContent className="w-56">
+                              <DropdownMenuSubContent className="w-60">
+                                <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                  System (replaces primary)
+                                </DropdownMenuLabel>
                                 {assignableRoles.map((r) => (
                                   <DropdownMenuItem
                                     key={r}
@@ -442,12 +464,42 @@ export function UsersList({
                                     {r === u.role ? "current" : ""}
                                   </DropdownMenuItem>
                                 ))}
+                                {customRolesForQuickAdd.length > 0 && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                      Custom (stacks on top)
+                                    </DropdownMenuLabel>
+                                    {customRolesForQuickAdd.map((cr) => {
+                                      const alreadyAssigned = u.allRoles.some(
+                                        (ar) => !ar.isSystem && ar.name === cr.name,
+                                      );
+                                      return (
+                                        <DropdownMenuItem
+                                          key={cr.id}
+                                          onSelect={() =>
+                                            !alreadyAssigned && onAddCustomRole(u, cr.id)
+                                          }
+                                          disabled={alreadyAssigned}
+                                        >
+                                          <Badge
+                                            variant="outline"
+                                            className="mr-2 text-[10px]"
+                                          >
+                                            {cr.name}
+                                          </Badge>
+                                          {alreadyAssigned ? "assigned" : ""}
+                                        </DropdownMenuItem>
+                                      );
+                                    })}
+                                  </>
+                                )}
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
-                                  onSelect={() => router.push(`/users/${u.id}/access`)}
+                                  onSelect={() => router.push(`/users/${u.id}`)}
                                 >
                                   <ShieldCheck className="h-4 w-4" />
-                                  Custom roles & overrides…
+                                  Manage all access…
                                 </DropdownMenuItem>
                               </DropdownMenuSubContent>
                             </DropdownMenuPortal>
