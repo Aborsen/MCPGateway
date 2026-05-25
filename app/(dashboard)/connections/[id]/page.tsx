@@ -50,19 +50,12 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
   });
   if (!ds) notFound();
 
-  const workspaces = ds.workspaceDataSources.map((wds) => {
-    const tables = parseAllowedTables(wds.allowedTables);
-    return {
-      id: wds.id,
-      workspaceId: wds.workspaceId,
-      workspaceName: wds.workspace.name,
-      memberCount: wds.workspace.users.length,
-      allowedTablesLabel: tables
-        ? `${tables.length} ${tables.length === 1 ? "table" : "tables"}`
-        : "All tables",
-      allowedTables: tables,
-    };
-  });
+  const workspaces = ds.workspaceDataSources.map((wds) => ({
+    id: wds.id,
+    workspaceId: wds.workspaceId,
+    workspaceName: wds.workspace.name,
+    memberCount: wds.workspace.users.length,
+  }));
 
   // Aggregate every user who can reach this connector. Each user appears
   // once with one source entry per path that grants them access:

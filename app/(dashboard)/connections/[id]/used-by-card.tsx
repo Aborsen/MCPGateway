@@ -26,8 +26,6 @@ export type WorkspaceEntry = {
   workspaceId: string;
   workspaceName: string;
   memberCount: number;
-  allowedTablesLabel: string;
-  allowedTables: string[] | null;
 };
 
 export type UserSource = {
@@ -210,13 +208,6 @@ export function UsedByCard({
                             {w.memberCount} member{w.memberCount === 1 ? "" : "s"}
                           </div>
                         </Link>
-                        <Badge
-                          variant="outline"
-                          className="ml-2 shrink-0 text-xs"
-                          title={w.allowedTables ? w.allowedTables.join(", ") : "All tables"}
-                        >
-                          {w.allowedTablesLabel}
-                        </Badge>
                       </li>
                     ))}
                   </Section>

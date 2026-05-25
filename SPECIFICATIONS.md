@@ -60,7 +60,7 @@ flowchart LR
         OIDC["OIDC Provider<br/>(oidc-provider)"]
         ADMIN["Admin UI<br/>(/dashboard)"]
         AUTHJS["Auth.js v5<br/>(Credentials + JWT)"]
-        PROXY_U["MCP Proxy<br/>/api/mcp/u/[uid]"]
+        PROXY_U["MCP Proxy<br/>/api/mcp"]
         PROXY_W["MCP Proxy<br/>/api/mcp/w/[uid]"]
         PFILT["Permission Filter<br/>+ Table Security"]
         UPSTREAM["Upstream MCP Client<br/>+ Mock Fallback"]
@@ -112,8 +112,9 @@ flowchart LR
 |---|---|---|
 | Admin UI | [app/(dashboard)/](app/(dashboard)/) | Authenticated React server-component dashboard for managing users, workspaces, connectors, permissions, audit logs, and settings. |
 | Auth.js (admin) | [lib/auth.ts](lib/auth.ts) | Credentials-provider login + JWT session for the admin UI. |
+| RBAC engine | [lib/permissions/](lib/permissions/) | `catalog.ts` (32 permissions + 8 system roles), `resolve.ts` (`can`/`canInWorkspace`/`isOwnerUser`/etc., cached per-request), `seed.ts` (idempotent role reconciliation run on every deploy). |
 | OIDC provider | [lib/oidc/](lib/oidc/) | OAuth 2.1 server for MCP clients. `oidc-provider` library, Prisma-backed adapter, Auth.js bridge. |
-| MCP user proxy | [app/api/mcp/u/[uid]/route.ts](app/api/mcp/u/[uid]/route.ts) | Per-user JSON-RPC endpoint; applies union of all the user's grants. |
+| MCP generic proxy | [app/api/mcp/route.ts](app/api/mcp/route.ts) | Generic JSON-RPC endpoint serving every authenticated user. The OAuth-authenticated account is authoritative; applies the union of all the user's workspace memberships + direct grants. |
 | MCP workspace proxy | [app/api/mcp/w/[uid]/route.ts](app/api/mcp/w/[uid]/route.ts) | Per-workspace JSON-RPC endpoint; applies only that workspace's grants for the calling member. |
 | Permission filter | [lib/mcp/permission-filter.ts](lib/mcp/permission-filter.ts) | Resolves access, classifies tools, enforces table allowlists, scrubs list-tool responses. |
 | Upstream client | [lib/mcp/upstream-client.ts](lib/mcp/upstream-client.ts) | Outbound HTTP JSON-RPC + SSE; 30s tool-list cache; mock fallback. |
@@ -130,9 +131,9 @@ flowchart LR
 
 ### 2.3 Request Paths
 
-**Admin path** — Browser hits `/(dashboard)/*`; the dashboard layout in [app/(dashboard)/layout.tsx](app/(dashboard)/layout.tsx) calls `requireAuth()` and redirects to `/login` if the JWT session is missing. Server components read from Prisma; mutations go through `/api/*` routes that all check `requireAuth()` / `requireAdmin()` / `requireOwner()` from [lib/auth.ts](lib/auth.ts).
+**Admin path** — Browser hits `/(dashboard)/*`; the dashboard layout in [app/(dashboard)/layout.tsx](app/(dashboard)/layout.tsx) calls `requireAuth()` and redirects to `/login` if the JWT session is missing. Server components read from Prisma; mutations go through `/api/*` routes that all check a permission via `requirePermission(key)` / `requirePermissionInWorkspace(key, wsId)` / `requireAdmin()` / `requireOwner()` from [lib/auth.ts](lib/auth.ts). The permission catalog itself lives in [lib/permissions/catalog.ts](lib/permissions/catalog.ts) — see [§5.3](#53-rbac-system).
 
-**MCP path** — Client POSTs JSON-RPC 2.0 to `/api/mcp/u/{uid}` or `/api/mcp/w/{uid}` with `Authorization: Bearer …`. The route handler validates the token against `provider.AccessToken.find()`, resolves the OAuth-authenticated user (the URL `uid` is **only a routing hint** — never authoritative), rate-limits, parses the JSON-RPC envelope, dispatches by `method`, and writes an `AuditLog` row via `after()` so the response returns before persistence completes.
+**MCP path** — Client POSTs JSON-RPC 2.0 to `/api/mcp` (generic) or `/api/mcp/w/{uid}` (workspace-scoped) with `Authorization: Bearer …`. The route handler validates the token against `provider.AccessToken.find()`, resolves the OAuth-authenticated user (the workspace URL `uid` is **only a workspace selector** — the OAuth account is authoritative for permissions), rate-limits, parses the JSON-RPC envelope, dispatches by `method`, and writes an `AuditLog` row via `after()` so the response returns before persistence completes.
 
 ---
 
@@ -254,7 +255,7 @@ Not part of the build — run via `npx tsx scripts/<name>.ts`.
 
 **Provider**: Postgres only. The `datasource` block in [prisma/schema.prisma](prisma/schema.prisma) declares `provider = "postgresql"` and the connection URL is wired through `process.env.DATABASE_URL` in [prisma.config.ts](prisma.config.ts). The Prisma client is constructed lazily via a `Proxy` in [lib/db.ts](lib/db.ts) so `next build` succeeds even before env vars are present on Vercel.
 
-**Migrations**: production uses `prisma migrate deploy` (`npm run db:migrate`). The baseline migration plus subsequent schema changes (e.g. `Workspace.mcpUid`) live under [prisma/migrations/](prisma/migrations/) with [migration_lock.toml](prisma/migrations/migration_lock.toml). Local dev may still use `prisma db push` for quick iteration, but committed schema changes should go through `prisma migrate dev` so the migration history stays consistent with the deployed DB.
+**Migrations**: production currently uses `prisma db push --accept-data-loss` from the `build` script (see [§15.2](#152-migrations--rbac-seed) for the full deploy chain). This keeps the schema in lock-step with the model without a separate migration history — fine for the demo prototype, easy to revisit by swapping in `prisma migrate deploy` for environments that need a paper trail of every column change. Local dev can use either `npm run db:push` (quick iteration) or `prisma migrate dev` (if you want to start building a migration history).
 
 ### 4.1 ER Diagram
 
@@ -262,12 +263,21 @@ Not part of the build — run via `npx tsx scripts/<name>.ts`.
 erDiagram
     User ||--o{ WorkspaceUser : has
     User ||--o{ UserDataSourceAccess : has
+    User ||--o{ UserRole : "assigned"
+    User ||--o{ UserPermissionOverride : "has overrides"
     User ||--o{ AuditLog : "logged for"
     User ||--o{ AdminEvent : "acted"
     User ||--o{ AdminEvent : "targeted"
 
     Workspace ||--o{ WorkspaceUser : has
     Workspace ||--o{ WorkspaceDataSource : has
+    Workspace ||--o{ UserRole : "scopes (optional)"
+    Workspace ||--o{ UserPermissionOverride : "scopes (optional)"
+
+    Role ||--o{ RolePermission : grants
+    Role ||--o{ UserRole : "assigned to"
+    Permission ||--o{ RolePermission : "granted via"
+    Permission ||--o{ UserPermissionOverride : "overridden via"
 
     DataSource ||--o{ WorkspaceDataSource : "linked from"
     DataSource ||--o{ UserDataSourceAccess : "linked from"
@@ -290,10 +300,10 @@ erDiagram
         String email UK
         String name
         String passwordHash
-        String role
         String mcpUid UK
         DateTime createdAt
         DateTime deletedAt
+        DateTime suspendedAt
     }
 
     Workspace {
@@ -313,7 +323,52 @@ erDiagram
         String upstreamUrl
         String configEncrypted
         String description
+        String blockedTables
         DateTime createdAt
+    }
+
+    Permission {
+        String key PK
+        String label
+        String category
+        Boolean scopeable
+        String description
+    }
+
+    Role {
+        String id PK
+        String slug UK
+        String name
+        String description
+        Boolean isSystem
+        DateTime createdAt
+        DateTime updatedAt
+    }
+
+    RolePermission {
+        String roleId FK
+        String permissionKey FK
+    }
+
+    UserRole {
+        String id PK
+        String userId FK
+        String roleId FK
+        String workspaceId FK
+        String grantedById FK
+        DateTime grantedAt
+    }
+
+    UserPermissionOverride {
+        String id PK
+        String userId FK
+        String permissionKey FK
+        String workspaceId FK
+        String effect
+        String reason
+        String grantedById FK
+        DateTime grantedAt
+        DateTime expiresAt
     }
 
     ToolPermission {
@@ -380,23 +435,25 @@ erDiagram
 ### 4.2 Models
 
 #### `User` ([prisma/schema.prisma:13](prisma/schema.prisma))
-Admin-UI user account. Also serves as the OAuth account when the user connects via Claude Code (the `mcpUid` is the routing handle in `/api/mcp/u/{mcpUid}`).
-- `email` unique; soft-delete via `deletedAt`.
-- `role` default `"USER"` — see [§5.3](#53-role-hierarchy).
+Admin-UI user account. Also serves as the OAuth account when the user connects via Claude Code.
+- `email` unique; soft-delete via `deletedAt`; sign-in block via `suspendedAt`.
 - `passwordHash` is bcrypt.
-- Relations: `WorkspaceUser[]`, `AuditLog[]`, `AdminEvent[]` (as actor and as target), `UserDataSourceAccess[]`.
+- `mcpUid` is a legacy routing handle kept on the schema for backward compatibility — the generic MCP endpoint at `/api/mcp` no longer uses it; the OAuth account is authoritative.
+- **No `role` column** — Phase 2 PR2b dropped it. The user's effective role(s) live in the `UserRole` join table, layered with `UserPermissionOverride` rows. See [§5.3](#53-rbac-system).
+- Relations: `WorkspaceUser[]`, `AuditLog[]`, `AdminEvent[]` (as actor and as target), `UserDataSourceAccess[]`, `UserRole[]`, `UserPermissionOverride[]`.
 
 #### `OidcModel` ([prisma/schema.prisma:30](prisma/schema.prisma))
 Storage for all OAuth/OIDC state (sessions, authorization codes, access tokens, refresh tokens, grants, client configs, interaction state). Owned exclusively by [lib/oidc/adapter.ts](lib/oidc/adapter.ts). Indexes on `model`, `grantId`, `userCode`, `uid`, `expiresAt` for fast lookup and lazy cleanup.
 
-#### `DataSource` ([prisma/schema.prisma:47](prisma/schema.prisma))
+#### `DataSource` ([prisma/schema.prisma:53](prisma/schema.prisma))
 A registered upstream MCP server (one row per connector).
 - `slug` is the unique tool-namespace prefix (e.g., `postgres__query`).
 - `type` is a free-form category string used by the UI for grouping (`operations`, `sales`, `marketing`, `database`).
 - `configEncrypted` holds the libsodium-encrypted auth config (`authScheme` + token / custom headers) — see [§10](#10-cryptography--secrets).
+- `blockedTables` (optional JSON-string array) is a connector-wide deny list. Any MCP tool call targeting one of these tables is rejected regardless of which workspace or direct grant the caller is using — sensitive tables can be permanently kept off the connector even if a workspace's `allowedTables` would otherwise permit them. Edited via the **Block tables** button on the connection detail page.
 
-#### `ToolPermission` ([prisma/schema.prisma:63](prisma/schema.prisma))
-The per-tool authorisation level recorded for each `DataSource`. Auto-populated on first `tools/list` (with `classifiedBy = "heuristic"`); admins can override (`classifiedBy = "admin"`). `level` is one of `select | insert | update | delete | execute`. Unique on `(dataSourceId, toolName)`.
+#### `ToolPermission` ([prisma/schema.prisma:75](prisma/schema.prisma))
+The per-tool authorisation level recorded for each `DataSource`. Auto-populated on first `tools/list` (with `classifiedBy = "heuristic"`); admins can override (`classifiedBy = "admin"`). `level` is one of `select | insert | update | delete | execute` (the admin UI groups insert/update/execute under a single "Edit" bucket — see [§6.6](#66-tool-classification-heuristics)). Unique on `(dataSourceId, toolName)`.
 
 #### `UserDataSourceAccess` ([prisma/schema.prisma:76](prisma/schema.prisma))
 A **direct** user→data-source grant (sidesteps workspace membership). `permissions` is a JSON-string array of levels (parsed via `parsePermissions()` in [lib/json.ts](lib/json.ts)). `allowedTables` is an optional JSON-string array — `null` means unrestricted. Unique on `(userId, dataSourceId)`.
@@ -413,8 +470,23 @@ The user-to-workspace membership join. `permissions` is the JSON-string array of
 #### `AdminEvent` ([prisma/schema.prisma:124](prisma/schema.prisma))
 Audit trail for **administrative actions** (login/logout, user create/delete, role change, password reset, access grant/revoke, tool-level override). Actor and target user are both `SetNull` on delete. Indexed on `createdAt`, `(eventType, createdAt)`, `(actorId, createdAt)`.
 
-#### `AuditLog` ([prisma/schema.prisma:142](prisma/schema.prisma))
+#### `AuditLog` ([prisma/schema.prisma:156](prisma/schema.prisma))
 Per-request audit for the MCP proxy. Captures `method` (JSON-RPC method name), `toolName` (for `tools/call`), full request/response JSON (truncated to ~8 KB via `truncateJson()` in [lib/json.ts](lib/json.ts)), `status` (`OK`/`ERROR`), `durationMs`, and `errorMessage`. Five indexes covering common filter axes: `(userId, createdAt)`, `createdAt`, `(method, createdAt)`, `(dataSourceId, createdAt)`, `(status, createdAt)`.
+
+#### `Permission` ([prisma/schema.prisma:187](prisma/schema.prisma))
+The RBAC catalog. One row per known permission key (e.g. `users.delete`, `workspaces.manage_data_permissions`). Seeded idempotently from [lib/permissions/catalog.ts](lib/permissions/catalog.ts) by `lib/permissions/seed.ts` on every deploy. `scopeable=true` means the permission can be granted in a workspace-scoped way (e.g. workspace_admin in Workspace X but not Workspace Y). See [§5.3](#53-rbac-system).
+
+#### `Role` ([prisma/schema.prisma:202](prisma/schema.prisma))
+A named bundle of permissions. `isSystem=true` rows are seeded (owner, admin, editor, staff, guest, user, workspace_admin, workspace_member) and cannot be edited or deleted via the UI. Admins with `permissions.manage_roles` can author custom roles.
+
+#### `RolePermission` ([prisma/schema.prisma:216](prisma/schema.prisma))
+Join table: which permissions does each role grant. Composite PK `(roleId, permissionKey)`. Cascade-deletes when either side disappears.
+
+#### `UserRole` ([prisma/schema.prisma:230](prisma/schema.prisma))
+Assignment of a `Role` to a `User`, optionally workspace-scoped. NULL `workspaceId` = global; non-NULL = the role's powers apply only within that specific workspace. `grantedById` is `SetNull` on delete so the audit trail survives. Unique on `(userId, roleId, workspaceId)`.
+
+#### `UserPermissionOverride` ([prisma/schema.prisma:252](prisma/schema.prisma))
+Per-user GRANT or REVOKE of a single permission, layered on top of the role assignments. Hybrid model — `reason` is required by the UI for audit hygiene; `expiresAt` enables time-bounded access cleaned up daily by [app/api/cron/expire-overrides/route.ts](app/api/cron/expire-overrides/route.ts). Unique on `(userId, permissionKey, workspaceId, effect)`.
 
 ### 4.3 JSON-as-String Convention
 
@@ -442,14 +514,18 @@ The product has **two completely separate auth systems** — one for human admin
 Configured in [lib/auth.ts](lib/auth.ts).
 
 - **Provider**: `Credentials` only (email + password). The user record is looked up by email, password verified with `bcrypt.compare()`, and a JWT session is issued.
-- **Session strategy**: JWT (stateless). The `jwt` callback embeds `user.id` and `user.role` into the token; the `session` callback projects them back onto the session object.
+- **Session strategy**: JWT (stateless). Phase 2 PR2b dropped the role string from the JWT — the token now carries only `user.id`. Effective permissions are resolved per-request from `UserRole` + `UserPermissionOverride` and memoised via `React.cache()`.
 - **Sign-in endpoint**: [app/api/auth/sign-in/route.ts](app/api/auth/sign-in/route.ts) wraps Auth.js's sign-in with a per-IP rate limit (10 attempts / 15 min). It writes a `USER_LOGIN` `AdminEvent` on success and surfaces a generic error on failure (no enumeration of "user not found" vs "bad password").
 - **Catch-all NextAuth route**: [app/api/auth/[...nextauth]/route.ts](app/api/auth/[...nextauth]/route.ts) for `/api/auth/csrf`, `/api/auth/session`, `/api/auth/signin`, `/api/auth/signout`.
 - **Helpers** (all in [lib/auth.ts](lib/auth.ts)):
   - `requireAuth()` — returns the session, or a `NextResponse` with 401.
-  - `requireAdmin()` — returns the session if `role ∈ ADMIN_ROLES`, otherwise 401/403.
-  - `requireOwner()` — returns the session only if `role === "OWNER"`, otherwise 403.
+  - `requirePermission(key)` — returns the session if the caller holds the named catalog permission, otherwise 401/403. The primary gate for API routes.
+  - `requirePermissionInWorkspace(key, workspaceId)` — same, but the permission must apply within the given workspace (global grants pass; workspace-scoped grants pass only when the scope matches).
+  - `gatePermission(key)` — page-component variant that redirects unauthorised viewers instead of returning a `NextResponse`.
+  - `requireAdmin()` — true if the caller holds the `admin` or `owner` system role. Convenience helper; prefer `requirePermission(key)` for new routes.
+  - `requireOwner()` — true only if the caller holds the `owner` system role. Used by the few remaining Owner-only invariants (deleting an Owner account, creating/assigning the Owner role).
   - **Calling convention**: every API route handler that uses these must check `if (auth instanceof NextResponse) return auth;` before using the session.
+- **Permission resolver** ([lib/permissions/resolve.ts](lib/permissions/resolve.ts)): `can(userId, key)`, `canInWorkspace(userId, key, wsId)`, `isOwnerUser(userId)`, `isAdminUser(userId)`, `primarySystemRoleFor(userId)`, `primarySystemRolesByUserId(userIds[])`, `accessibleWorkspaceIds(userId)`. All cached per-request via `React.cache()` so the resolver runs at most once per (caller, query) within a single request.
 - **Dashboard guard**: the route group [app/(dashboard)/layout.tsx](app/(dashboard)/layout.tsx) runs `requireAuth()` server-side; unauthenticated visitors are redirected to the sign-in page.
 
 ### 5.2 MCP Endpoint Auth (OAuth 2.1 / OIDC)
@@ -518,17 +594,49 @@ Both are derived from `OIDC_ISSUER` — which **must** be the exact deploy origi
 
 `oidc-provider` is listed in `serverExternalPackages` in [next.config.ts](next.config.ts). The library uses module-scoped `WeakMap`s to track state; if Next.js's bundler duplicates the module across route chunks, each chunk gets its own map and `AccessToken.save` fails with `(0 , ig(...).dynamic[this.constructor.name]) is not a function`. **Do not remove this entry.**
 
-### 5.3 Role Hierarchy
+### 5.3 RBAC System
 
-The `User.role` column stores a string; see [lib/auth.ts](lib/auth.ts) for the canonical set.
+Phase 2 replaced the legacy `User.role` string column with a full catalog-driven RBAC system. Source of truth: [lib/permissions/catalog.ts](lib/permissions/catalog.ts), reconciled to the DB on every deploy by [lib/permissions/seed.ts](lib/permissions/seed.ts).
 
-| Role | Capability |
-|---|---|
-| `OWNER` | Tenant owner. Only role with permission to delete other users and assign roles. Gated via `requireOwner()`. |
-| `ADMIN` | Tier-admin. Aliased into `ADMIN_ROLES` with `OWNER` for non-destructive admin actions. Gated via `requireAdmin()`. |
-| `USER` / `MEMBER` | Default. No admin-panel privileges; can only see/act on resources granted through workspace memberships or direct grants. |
+#### 5.3.1 Permission Catalog
 
-Recent commits in the repo (`afc3abe`, `a9d6bed`) renamed `SUPER_ADMIN` → `OWNER` and introduced tier admin permissions — be careful when reading older PRs.
+**32 permissions** grouped into 7 categories: `dashboard`, `connections`, `users`, `workspaces`, `permissions`, `audit`, `settings`. Each entry has `key` (e.g. `users.delete`), `category`, `label`, `description`, and a `scopeable` flag — `scopeable=true` permissions (most under `workspaces.*`) can be granted in a workspace-scoped way; the rest are global-only.
+
+Every permission gate in the code refers to a catalog key. The catalog is the single source of truth — adding a permission means adding an entry and re-running the seed; renaming or removing a permission requires a coordinated catalog edit + code edit because the resolver enforces exhaustive coverage at type level.
+
+#### 5.3.2 System Roles
+
+8 system roles (`isSystem=true`) are seeded and reconciled by the deploy:
+
+| Slug | Powers | Typical use |
+|---|---|---|
+| `owner` | All 32 permissions. Owner-only invariants (deleting an Owner account, creating/assigning the Owner role) are enforced on top via `requireOwner()`. | Tenant root. |
+| `admin` | All 32 permissions. Can create / edit / delete users and custom roles. Cannot delete the Owner or assign the Owner role. | Day-to-day administrator. |
+| `editor` | dashboard + connections (full) + audit.view_all + settings.view. | Connector manager. |
+| `staff` | dashboard + workspaces.view + settings.view. | Read-only operator. |
+| `guest` | dashboard + connections.view + workspaces.view + settings.view. | Cross-surface read-only. |
+| `user` | Empty. MCP client only — no dashboard access. | Default for new accounts that only consume MCP. |
+| `workspace_admin` | Workspace-scoped: members + data sources + data permissions; plus dashboard.view, workspaces.view/update/delete, audit.view_own, settings.view. | Designed for `UserRole.workspaceId`-scoped assignment so a person can fully run "Sales" without touching "Engineering". |
+| `workspace_member` | dashboard + workspaces.view + settings.view. | Workspace-scoped read-only. |
+
+#### 5.3.3 Custom Roles + Per-User Overrides
+
+- **Custom roles** (`isSystem=false`) are admin-authored via `/permissions/roles`. Anyone with `permissions.manage_roles` can create/edit/delete them.
+- **Per-user permission overrides** ([UserPermissionOverride](#userpermissionoverride-prismaschemaprisma252)) sit on top of role assignments — a GRANT adds a single permission a role doesn't carry; a REVOKE removes a permission the role would otherwise grant. Required `reason` field. Optional `expiresAt` — the daily cron at [app/api/cron/expire-overrides/route.ts](app/api/cron/expire-overrides/route.ts) silently cleans expired rows.
+
+#### 5.3.4 Workspace-Scoped Assignments
+
+A `UserRole` row with a non-NULL `workspaceId` means the role's powers apply only within that workspace. The resolver enforces this in `canInWorkspace(userId, key, wsId)`: global assignments pass for any workspace; scoped assignments pass only when the scope matches. The Workspaces list filters to the caller's accessible scopes; the workspace detail page has a dedicated "Workspace roles" card for managing scoped admins.
+
+#### 5.3.5 Resolver
+
+All effective-permission queries go through [lib/permissions/resolve.ts](lib/permissions/resolve.ts):
+- `can(userId, key)` — global check (any UserRole/UserPermissionOverride grants the permission, anywhere).
+- `canInWorkspace(userId, key, workspaceId)` — workspace-scoped check.
+- `isOwnerUser(userId)` / `isAdminUser(userId)` — reads `UserRole` (the source of truth) rather than any cached JWT field.
+- `primarySystemRoleFor(userId)` — display-only string ("OWNER" / "ADMIN" / etc.) used by the users list, role badges, and audit details.
+
+Every helper is wrapped in `React.cache()` so within a single server-component render or API request the same query runs at most once.
 
 ---
 
@@ -536,8 +644,8 @@ Recent commits in the repo (`afc3abe`, `a9d6bed`) renamed `SUPER_ADMIN` → `OWN
 
 The MCP proxy is the heart of the product. There are two route handlers — both implement the same JSON-RPC dispatch but differ in how they resolve permissions:
 
-- [app/api/mcp/u/[uid]/route.ts](app/api/mcp/u/[uid]/route.ts) — **User-scoped**. Aggregates the user's workspace memberships *and* direct grants.
-- [app/api/mcp/w/[uid]/route.ts](app/api/mcp/w/[uid]/route.ts) — **Workspace-scoped**. Restricted to one workspace; additionally verifies that the OAuth-authenticated user is a member of that workspace.
+- [app/api/mcp/route.ts](app/api/mcp/route.ts) — **Generic, OAuth-account-scoped**. A single URL serves every authenticated user; the OAuth account is authoritative and the proxy aggregates that user's workspace memberships *and* direct grants. (The original per-user `/api/mcp/u/[uid]` route was removed — the URL handle was never authoritative anyway.)
+- [app/api/mcp/w/[uid]/route.ts](app/api/mcp/w/[uid]/route.ts) — **Workspace-scoped**. The `uid` path parameter selects a workspace; the OAuth account is still authoritative and is additionally required to be a member of that workspace.
 
 ### 6.1 Request Lifecycle
 
@@ -545,7 +653,7 @@ The MCP proxy is the heart of the product. There are two route handlers — both
 sequenceDiagram
     autonumber
     participant CC as Claude Code
-    participant Route as /api/mcp/u/{uid}
+    participant Route as /api/mcp
     participant OIDC as provider.AccessToken
     participant DB as Postgres
     participant Filter as permission-filter
@@ -619,20 +727,20 @@ The `title` and `icons` fields are forward-compatible with the **2025-11-25** MC
 
 Two query helpers, both in [lib/mcp/permission-filter.ts](lib/mcp/permission-filter.ts):
 
-- `getUserAccess(userId)` — used by `/api/mcp/u/`. Runs two parallel Prisma queries:
+- `getUserAccess(userId)` — used by `/api/mcp`. Runs two parallel Prisma queries:
   1. `WorkspaceUser → Workspace → WorkspaceDataSource → DataSource` (every data source attached to any workspace the user belongs to);
   2. `UserDataSourceAccess → DataSource` (every direct grant).
 
   Results merge into a single `Map<dataSourceId, UserAccess>` with:
     - `permissions`: **union** of permission levels across all grant sources;
     - `allowedTables`: **union** across sources (any source granting `null` ⇒ unrestricted; otherwise concatenated tables);
-    - `sources`: tagged list noting which grants contributed (useful for the admin UI's audit view).
-- `getWorkspaceMemberAccess(workspaceId, userId)` — used by `/api/mcp/w/`. Same as above but restricted to a single workspace's data sources. **Direct user grants are intentionally ignored** so the workspace URL stays scoped to that workspace.
+    - `sources`: tagged list noting which grants contributed (useful for the admin UI's provenance view).
+- `getWorkspaceMemberAccess(workspaceId, userId)` — used by `/api/mcp/w/[uid]`. Same as above but restricted to a single workspace's data sources. **Direct user grants are intentionally ignored** so the workspace URL stays scoped to that workspace.
 
 ```mermaid
 flowchart TB
     A[User signs in via OAuth] --> B{Endpoint type?}
-    B -->|/api/mcp/u/| C[getUserAccess]
+    B -->|/api/mcp| C[getUserAccess]
     B -->|/api/mcp/w/| D[getWorkspaceMemberAccess]
     C --> E[Workspace memberships<br/>WorkspaceUser → WorkspaceDataSource]
     C --> F[Direct grants<br/>UserDataSourceAccess]
@@ -648,11 +756,12 @@ flowchart TB
 
 ### 6.5 Table Security
 
-A defence-in-depth measure layered **on top of** whatever ACLs the upstream MCP server already enforces. Implemented in three layers:
+A defence-in-depth measure layered **on top of** whatever ACLs the upstream MCP server already enforces. Implemented in four layers:
 
-1. **Pre-call filter at `tools/list`**: if `allowedTables` is set for a data source, the listing excludes any "raw query" tool (regex match against names like `query`, `run_soql`, `execute_ddl`, `run_apex`) because raw queries cannot be safely bound to a table allowlist.
-2. **Pre-call enforcement at `tools/call`**: the tool arguments are scanned for a table key — known keys include `table_name`, `table`, `module`, `object_name`, `objectName`, `resource`. If the extracted value is **not** in `allowedTables`, the call is rejected with a `PERMISSION_DENIED`-style JSON-RPC error before any upstream traffic.
-3. **Post-call response filter**: `filterListedTablesText()` parses the tool result text as JSON or CSV and scrubs entries referencing disallowed tables. Wrapping keys recognised: `tables`, `objects`, `results`, `data`, `items`, `rows`. If the format doesn't match anything recognisable, the response is returned unchanged (intentional fail-open at the *display* layer — the pre-call filter is the security boundary).
+1. **Connector-wide blocklist** (`DataSource.blockedTables`): any tool call targeting a table in this array is rejected regardless of which workspace / direct grant the caller is using. Also kills raw-query tools and post-filters list-tables responses. This is the connector owner's "permanent off-limits" list — a workspace's `allowedTables` cannot override it.
+2. **Pre-call filter at `tools/list`**: if `allowedTables` is set for a data source, the listing excludes any "raw query" tool (regex match against names like `query`, `run_soql`, `execute_ddl`, `run_apex`) because raw queries cannot be safely bound to a table allowlist.
+3. **Pre-call enforcement at `tools/call`**: the tool arguments are scanned for a table key — known keys include `table_name`, `table`, `module`, `object_name`, `objectName`, `resource`. If the extracted value is **not** in `allowedTables` (or **is** in `blockedTables`), the call is rejected with a `PERMISSION_DENIED`-style JSON-RPC error before any upstream traffic.
+4. **Post-call response filter**: `filterListedTablesText()` parses the tool result text as JSON or CSV and scrubs entries referencing disallowed tables. Wrapping keys recognised: `tables`, `objects`, `results`, `data`, `items`, `rows`. If the format doesn't match anything recognisable, the response is returned unchanged (intentional fail-open at the *display* layer — the pre-call filter is the security boundary).
 
 The product **does not** rewrite or sandbox SQL. The rule is: if a tool exposes raw SQL/SOQL/APEX/SQL-DDL, table allowlists block its use entirely; otherwise table allowlists narrow which structured calls are permitted.
 
@@ -669,6 +778,8 @@ If admins haven't manually classified a tool, [lib/mcp/permission-filter.ts](lib
 | everything else | `select` |
 
 The matches are checked in destructive-first order, so `delete_and_create_new_record` classifies as `delete`. Admins can override per-tool in the connections page.
+
+**UI grouping**: the admin-facing dropdown collapses the 5 raw levels into 3 buckets — **View** = `select`, **Edit** = `insert | update | execute` (toggled as a group), **Delete** = `delete`. Storage stays on the granular 5 levels; the MCP proxy gates with a set-membership check (`connector.permissions.has(required)`) so any of `insert/update/execute` is equivalent at the runtime level — picking "Edit" in the dropdown writes the canonical `update` to `ToolPermission.level`. Helpers live in [app/(dashboard)/permissions/permissions-types.ts](app/(dashboard)/permissions/permissions-types.ts): `effectiveLevelsFor`, `expandEffectiveSet`, `setEffective`.
 
 ---
 
@@ -825,24 +936,26 @@ If the env vars are missing, the catalog card still renders, the OAuth button is
 
 ---
 
-## 8. Workspaces & User-Scoped URLs
+## 8. Workspaces & MCP URLs
 
 ### 8.1 Two URL Models
 
 | URL | Scope | When to use |
 |---|---|---|
-| `/api/mcp/u/{user.mcpUid}` | All of the user's workspaces + direct grants merged | Personal use — one URL gives the user everything they can access. |
-| `/api/mcp/w/{workspace.mcpUid}` | Only that workspace's data sources, scoped to the calling member | Team use — every member of "Sales Team" configures the same URL and gets the same view of the world. |
+| `/api/mcp` | All of the user's workspaces + direct grants merged | Personal use — one generic URL serves every user. The OAuth-authenticated account is authoritative; no per-user routing handle is needed. |
+| `/api/mcp/w/{workspace.mcpUid}` | Only that workspace's data sources, scoped to the calling member | Team use — every member of "Sales Team" configures the same URL and gets that workspace's view (the proxy still verifies the OAuth account is a member). |
 
-Both `mcpUid` values are random opaque strings (24-byte base64url). **They are not credentials.** They appear in the URL after OAuth completes, so the request must already carry a valid `Authorization: Bearer …` for the gateway to do anything. The URL just selects which workspace's grants apply for that authenticated user.
+The workspace `mcpUid` is a random opaque string (24-byte base64url). **It is not a credential.** It only appears in the URL after OAuth completes, so the request must already carry a valid `Authorization: Bearer …` for the gateway to do anything. The URL segment just selects which workspace's grants apply for that authenticated user.
+
+The original per-user URL (`/api/mcp/u/{user.mcpUid}`) was removed — the `uid` in the path was never authoritative for permissions (the OAuth account was), so it added no security but did add a needless per-user URL surface. The generic `/api/mcp` route uses the OAuth account directly. The schema still carries `User.mcpUid` for backward compatibility but it's no longer consumed.
 
 ### 8.2 Rotation
 
-Admins can rotate either kind of `mcpUid` (via [app/api/users/[id]/tokens/route.ts](app/api/users/[id]/tokens/route.ts) or [app/api/workspaces/[id]/tokens/route.ts](app/api/workspaces/[id]/tokens/route.ts)). A new value is written and the old URL stops resolving on the next request. Use this if a URL is leaked to an external party (the URL alone isn't enough to access anything, but it's a defence-in-depth move).
+Admins can rotate the workspace `mcpUid` via [app/api/workspaces/[id]/tokens/route.ts](app/api/workspaces/[id]/tokens/route.ts). A new value is written and the old URL stops resolving on the next request. Use this if the URL is leaked to an external party (the URL alone isn't enough to access anything, but it's a defence-in-depth move).
 
 ### 8.3 Member OAuth
 
-Every workspace member completes their **own** OAuth flow against `/oauth/auth`. The access token is bound to that user (the OAuth account is authoritative on every JSON-RPC request); the workspace URL just selects the scope. The proxy re-checks `WorkspaceUser` membership on each request — kicking a user from a workspace immediately blocks further access through that workspace URL even if their token is still valid.
+Every user completes their **own** OAuth flow against `/oauth/auth`. The access token is bound to that user (the OAuth account is authoritative on every JSON-RPC request); the workspace URL just selects the scope. The proxy re-checks `WorkspaceUser` membership on each request — kicking a user from a workspace immediately blocks further access through that workspace URL even if their token is still valid.
 
 ### 8.4 Seeded Workspaces
 
@@ -851,11 +964,16 @@ From [prisma/seed.ts](prisma/seed.ts):
 - **Sales Team** — Alice (`select, insert, update`), Bob (`select`). Connected to HubSpot, Salesforce, Zoho with table allowlists (only a curated set of objects).
 - **Engineering** — Carol (full), Admin (full). Connected to Jira and Postgres with no table restrictions.
 
-### 8.5 Admin UI
+### 8.5 Workspace-Scoped Admins
 
-- List: [app/(dashboard)/workspaces/page.tsx](app/(dashboard)/workspaces/page.tsx).
-- Detail editor: [app/(dashboard)/workspaces/[id]/workspace-editor.tsx](app/(dashboard)/workspaces/[id]/workspace-editor.tsx).
+A `UserRole` row with a non-NULL `workspaceId` grants that role's powers only within the named workspace. The workspace detail page has a "Workspace roles" card for managing these scoped assignments without granting global admin. The Workspaces list filters to workspaces the caller can access (global admins see everything; workspace-scoped admins see only their workspaces). See [§5.3.4](#534-workspace-scoped-assignments).
+
+### 8.6 Admin UI
+
+- List: [app/(dashboard)/workspaces/page.tsx](app/(dashboard)/workspaces/page.tsx) — scope-filtered.
+- Detail editor: [app/(dashboard)/workspaces/[id]/workspace-editor.tsx](app/(dashboard)/workspaces/[id]/workspace-editor.tsx) — name/description + members + data sources + per-member permissions.
 - URL display + rotate: [app/(dashboard)/workspaces/[id]/workspace-mcp-url.tsx](app/(dashboard)/workspaces/[id]/workspace-mcp-url.tsx).
+- Single-member inline edit: `PUT /api/workspaces/[id]/users/[userId]` (gated on `workspaces.manage_data_permissions`) is also wired into the **Permissions → By User / By Connection** matrix so admins can edit a workspace member's data permissions without leaving the matrix view.
 
 ---
 
@@ -883,8 +1001,12 @@ A separate table for admin-panel actions, populated via [lib/admin-events.ts](li
 
 - `USER_LOGIN`, `USER_LOGOUT`
 - `USER_CREATED`, `USER_UPDATED`, `USER_DELETED`, `USER_PASSWORD_CHANGED`, `USER_ROLE_CHANGED`
+- `USER_SUSPENDED`, `USER_UNSUSPENDED`
 - `USER_DATA_SOURCE_ACCESS_CHANGED`, `USER_DATA_SOURCE_ACCESS_REVOKED`
+- `WORKSPACE_USER_REMOVED`, `WORKSPACE_USER_PERMISSIONS_CHANGED`
 - `TOOL_LEVEL_OVERRIDDEN`
+- `ROLE_CREATED`, `ROLE_UPDATED`, `ROLE_DELETED`, `ROLE_ASSIGNED`, `ROLE_UNASSIGNED`
+- `PERMISSION_OVERRIDE_GRANTED`, `PERMISSION_OVERRIDE_REVOKED`
 
 Actor (`actorId`) and target user (`targetUserId`) are both `SetNull` on delete so the audit trail survives user deletion.
 
@@ -963,10 +1085,10 @@ All under [app/(dashboard)/](app/(dashboard)/). The route group guard in [app/(d
 | Page | Purpose | Key files |
 |---|---|---|
 | Dashboard (`/`) | Overview cards (users, connectors, 24h queries, 24h errors), 7-day query chart, top users, queries-by-connector. | [app/(dashboard)/page.tsx](app/(dashboard)/page.tsx), [app/(dashboard)/dashboard-chart.tsx](app/(dashboard)/dashboard-chart.tsx), [lib/dashboard-metrics.ts](lib/dashboard-metrics.ts) |
-| Connections (`/connections`) | List, create, edit data sources. **Add Connection** opens a chooser modal: "Existing MCP URL" (paste any MCP URL + headers) or "Create connection" (catalog-based flow, see [§7.6](#76-connector-catalog--in-process-adapters)). Per-connector tool list with level overrides. | [app/(dashboard)/connections/](app/(dashboard)/connections/) |
-| Users (`/users`) | List users; per-user detail with role, password reset, direct grants, MCP URL rotation. | [app/(dashboard)/users/](app/(dashboard)/users/) |
-| Workspaces (`/workspaces`) | CRUD workspaces, members, attached data sources, table allowlists; rotate workspace MCP URL. | [app/(dashboard)/workspaces/](app/(dashboard)/workspaces/) |
-| Permissions (`/permissions`) | Matrix view (users × connectors) and breakdowns by-connection / by-user; inline editor + bulk actions. | [app/(dashboard)/permissions/](app/(dashboard)/permissions/) |
+| Connections (`/connections`) | List, create, edit data sources. **Add Connection** opens a chooser modal: "Existing MCP URL" (paste any MCP URL + headers) or "Create connection" (catalog-based flow, see [§7.6](#76-connector-catalog--in-process-adapters)). Per-connector tool list with level overrides (View / Edit / Delete dropdown). Detail page also has a **Block tables** editor and a **Used by** card listing every workspace and effective user reachable through that connector. The workspace rows in **Used by** intentionally do not show per-workspace table allowlists inline — those are managed on the workspace editor and aren't needed for "who uses this connector" provenance. | [app/(dashboard)/connections/](app/(dashboard)/connections/) |
+| Users (`/users`) | Sortable / searchable list with role filter, MCP-status chip, CSV export, bulk role assignment + bulk delete. Per-user detail page has account, stats, **assigned roles**, **permission overrides**, workspace memberships, connection access, and effective-permissions cards. | [app/(dashboard)/users/](app/(dashboard)/users/) |
+| Workspaces (`/workspaces`) | CRUD workspaces, members, attached data sources, table allowlists; rotate workspace MCP URL; **Workspace roles** card for scoped-admin assignments. List is filtered to the caller's accessible scopes. | [app/(dashboard)/workspaces/](app/(dashboard)/workspaces/) |
+| Permissions (`/permissions`) | Three views: **By User**, **By Connection**, and a dense **Matrix**. Inline workspace-perm edit dialog (with a warning that workspace perms apply to every connector in the workspace), bulk grant/revoke actions, and a `/permissions/roles` sub-page for CRUD on custom roles. Pills use the View / Edit / Delete vocabulary throughout. | [app/(dashboard)/permissions/](app/(dashboard)/permissions/) |
 | Audit (`/audit`) | Tabs: full audit log + query log (filtered to tool calls). CSV export via [lib/csv.ts](lib/csv.ts). | [app/(dashboard)/audit/](app/(dashboard)/audit/) |
 | Settings (`/settings`) | Global settings (retention, etc.). Accessed via the avatar dropdown at the bottom of the sidebar — not a top-level nav item. | [app/(dashboard)/settings/](app/(dashboard)/settings/) |
 | Specifications (`/specs`) | In-product spec viewer that renders [SPECIFICATIONS.md](SPECIFICATIONS.md) with a scroll-spy TOC rail. OWNER/ADMIN-gated. Accessed via the avatar dropdown. | [app/specs/](app/specs/) |
@@ -990,10 +1112,13 @@ Cross-reference checklist for security review.
 - ✅ Full audit logging of every JSON-RPC call (non-blocking)
 - ✅ Admin-action audit (`AdminEvent`)
 - ✅ Soft-deletes (`deletedAt`) on `User` and `Workspace` — preserves audit history
-- ✅ Per-data-source permission levels (`select | insert | update | delete | execute`)
+- ✅ Per-data-source permission levels (raw: `select | insert | update | delete | execute`; admin UI grouped: View / Edit / Delete)
 - ✅ Table-level allowlists on both workspace and direct grants
+- ✅ Connector-wide blocklist (`DataSource.blockedTables`) that overrides any workspace allowlist
 - ✅ Defence-in-depth: pre-call enforcement + post-response scrubbing
-- ✅ Role-gated admin actions: `requireAuth` / `requireAdmin` / `requireOwner`
+- ✅ Catalog-driven RBAC with 32 permissions + 8 system roles + custom roles + per-user GRANT/REVOKE overrides (with required reason + optional expiry, cleaned up by a daily cron)
+- ✅ Permission-gated admin actions: `requirePermission(key)` / `requirePermissionInWorkspace(key, wsId)` / `requireAdmin` / `requireOwner`
+- ✅ Workspace-scoped admin assignments via `UserRole.workspaceId`
 - ✅ Cron endpoint gated by `Authorization: Bearer ${CRON_SECRET}`
 - ✅ Production fail-fast on missing `MCP_CONFIG_KEY`
 - ✅ MCP URLs are not credentials (OAuth bearer is authoritative)
@@ -1062,8 +1187,9 @@ npx tsx scripts/generate-jwks.ts | Out-File jwks.json -Encoding utf8
 #    (paste the secrets generated above)
 
 # 5. Initialise the DB
-npm run db:migrate   # apply committed migrations  (use db:push for quick local iteration)
-npm run db:seed      # seed demo data
+npm run db:push                  # sync schema.prisma to the DB
+npx tsx lib/permissions/seed.ts  # seed the RBAC catalog + 8 system roles
+npm run db:seed                  # seed demo users, workspaces, connectors
 
 # 6. Run
 npm run dev
@@ -1072,14 +1198,14 @@ npm run dev
 
 ### 14.3 Seed Accounts
 
-From [prisma/seed.ts](prisma/seed.ts):
+From [prisma/seed.ts](prisma/seed.ts). Roles are assigned via `UserRole` rows pointing at the system role from the RBAC seed.
 
 | Email | Password | Role | In workspaces |
 |---|---|---|---|
-| `admin@devart.com` | `admin123` | `OWNER` | Engineering (full access) |
-| `alice@devart.com` | `demo123` | `USER` | Sales Team (select/insert/update) |
-| `bob@devart.com` | `demo123` | `USER` | Sales Team (select) |
-| `carol@devart.com` | `demo123` | `USER` | Engineering (full access) |
+| `admin@devart.com` | `admin123` | `owner` | Engineering (full access) |
+| `alice@devart.com` | `demo123` | `user` | Sales Team (View / Edit) |
+| `bob@devart.com` | `demo123` | `user` | Sales Team (View) |
+| `carol@devart.com` | `demo123` | `user` | Engineering (full access) |
 
 ### 14.4 Demo Walkthrough
 
@@ -1108,15 +1234,26 @@ A clean install is correct if:
 
 Provision Postgres (Neon recommended for Vercel — pooled connection string handles serverless fan-out). The `DATABASE_URL` should be the **pooled** URL.
 
-### 15.2 Migrations
+### 15.2 Migrations & RBAC seed
 
-Production deploys run `npm run db:migrate` (= `prisma migrate deploy`) to apply any pending migrations from [prisma/migrations/](prisma/migrations/). The baseline (`20260513000000_init`) plus subsequent migrations are committed to the repo; new schema changes should be generated with `prisma migrate dev` and committed alongside the schema edit.
+Production deploys run the `build` script from [package.json](package.json) which is:
+
+```
+prisma db push --accept-data-loss && tsx lib/permissions/seed.ts && next build
+```
+
+In order:
+1. `prisma db push` syncs the `schema.prisma` model to the deployed Postgres without going through `prisma/migrations/`. The `--accept-data-loss` flag is required to drop columns the schema no longer has (e.g. when `User.role` was removed). For deployments that need a full migration history, swap this for `prisma migrate deploy` and use `prisma migrate dev` locally to generate migrations.
+2. `tsx lib/permissions/seed.ts` reconciles the Permission catalog + 8 system roles + their RolePermission joins idempotently (adds new permissions, removes deleted ones). This is **how new permissions reach prod** — a code-level addition to [lib/permissions/catalog.ts](lib/permissions/catalog.ts) takes effect on the next deploy.
+3. `next build` compiles the app.
+
+The RBAC seed is safe to run repeatedly. If it fails the build fails — a half-seeded catalog never goes live.
 
 ### 15.3 Vercel Project Settings
 
 - **Framework preset**: Next.js (auto-detected).
   - *Gotcha*: occasionally Vercel sets framework to `null`, which causes Ready builds to return `NOT_FOUND` at the edge. Fix via `PATCH /v9/projects/{id}` with `{ "framework": "nextjs" }`.
-- **Build command**: `npm run db:migrate && next build` (or set `NEXT_BUILD_COMMAND` and add a separate migrate step in a deployment job).
+- **Build command**: default (`npm run build`, which runs the chain above).
 - **Install command**: default (`npm install` — the postinstall runs `prisma generate`).
 - **Environment variables**: all of the [§16](#16-environment-variables-reference) production-required vars.
 
