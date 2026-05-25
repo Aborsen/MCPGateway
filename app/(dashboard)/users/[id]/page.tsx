@@ -116,13 +116,21 @@ export default async function UserDetailPage({ params }: PageProps) {
         title={user.name}
         description={user.email}
         actions={
-          <Link
-            href="/users"
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Back to users
-          </Link>
+          <div className="flex items-center gap-3 text-sm">
+            <Link
+              href={`/users/${user.id}/access`}
+              className="rounded-md border border-border px-3 py-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              Access &amp; permissions →
+            </Link>
+            <Link
+              href="/users"
+              className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Back to users
+            </Link>
+          </div>
         }
       />
 
