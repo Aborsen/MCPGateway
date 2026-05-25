@@ -14,6 +14,7 @@ export type AdminEventType =
   | "USER_DATA_SOURCE_ACCESS_CHANGED"
   | "USER_DATA_SOURCE_ACCESS_REVOKED"
   | "WORKSPACE_USER_REMOVED"
+  | "WORKSPACE_USER_PERMISSIONS_CHANGED"
   | "TOOL_LEVEL_OVERRIDDEN"
   // Phase 2 PR3 — RBAC admin authoring
   | "ROLE_CREATED"
@@ -65,6 +66,7 @@ export const EVENT_LABELS: Record<AdminEventType, string> = {
   USER_DATA_SOURCE_ACCESS_CHANGED: "Direct Grant Changed",
   USER_DATA_SOURCE_ACCESS_REVOKED: "Direct Grant Revoked",
   WORKSPACE_USER_REMOVED: "Workspace Member Removed",
+  WORKSPACE_USER_PERMISSIONS_CHANGED: "Workspace Member Permissions Changed",
   TOOL_LEVEL_OVERRIDDEN: "Tool Level Overridden",
   ROLE_CREATED: "Role Created",
   ROLE_UPDATED: "Role Updated",

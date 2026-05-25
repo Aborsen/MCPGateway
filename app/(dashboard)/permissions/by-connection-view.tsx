@@ -96,6 +96,19 @@ export function ByConnectionView({
     await onChange();
   }
 
+  async function saveWorkspaceGrant(userId: string, workspaceId: string, perms: PermissionLevel[]) {
+    const res = await fetch(`/api/workspaces/${workspaceId}/users/${userId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ permissions: perms }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error ?? `Request failed (${res.status})`);
+    }
+    await onChange();
+  }
+
   return (
     <div className="flex h-[calc(100vh-140px)] min-h-[520px]">
       {/* LEFT: connection list */}
@@ -190,6 +203,7 @@ export function ByConnectionView({
             users={data.users}
             grants={grantsByDs.get(focused.id) ?? []}
             onSave={(userId, perms) => saveDirectGrant(userId, focused.id, perms)}
+            onSaveWorkspace={(userId, wsId, perms) => saveWorkspaceGrant(userId, wsId, perms)}
           />
         ) : (
           <EmptyHint />
@@ -254,11 +268,13 @@ function ConnectionDetail({
   users,
   grants,
   onSave,
+  onSaveWorkspace,
 }: {
   ds: DataSourceRow;
   users: MatrixPayload["users"];
   grants: GrantCell[];
   onSave: (userId: string, perms: PermissionLevel[]) => void | Promise<void>;
+  onSaveWorkspace: (userId: string, workspaceId: string, perms: PermissionLevel[]) => void | Promise<void>;
 }) {
   const [search, setSearch] = useState("");
   const [hideEmpty, setHideEmpty] = useState(false);
@@ -316,6 +332,9 @@ function ConnectionDetail({
               cell={cell}
               onSave={(perms) => onSave(u.id, perms)}
               onRevokeDirect={() => onSave(u.id, [])}
+              onSaveWorkspace={(wsId, perms) => onSaveWorkspace(u.id, wsId, perms)}
+              userLabel={u.name}
+              connectionLabel={ds.name}
             />
           );
         })}

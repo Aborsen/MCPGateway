@@ -1,8 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { Check, FolderTree, Sparkles, MoreHorizontal, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, Check, FolderTree, MoreHorizontal, Sparkles, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -10,7 +19,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LEVELS, LEVEL_LABEL, type GrantCell, type PermissionLevel } from "./permissions-types";
+import { LEVELS, LEVEL_LABEL, type GrantCell, type GrantSource, type PermissionLevel } from "./permissions-types";
+
+type WorkspaceSource = Extract<GrantSource, { kind: "workspace" }>;
 
 // Reusable row showing a single (user × connection) grant with R/W/D toggle pills.
 // Used in both By User and By Connection right-pane lists.
@@ -20,6 +31,9 @@ export function InlinePermRow({
   cell,
   onSave,
   onRevokeDirect,
+  onSaveWorkspace,
+  userLabel,
+  connectionLabel,
   emphasis,
 }: {
   label: string;
@@ -27,12 +41,18 @@ export function InlinePermRow({
   cell: GrantCell | undefined;
   onSave: (next: PermissionLevel[]) => void | Promise<void>;
   onRevokeDirect?: () => void | Promise<void>;
+  onSaveWorkspace?: (workspaceId: string, perms: PermissionLevel[]) => void | Promise<void>;
+  userLabel?: string;
+  connectionLabel?: string;
   emphasis?: boolean;
 }) {
   const directSource = cell?.sources.find((s) => s.kind === "direct");
-  const workspaceSources = cell?.sources.filter((s) => s.kind === "workspace") ?? [];
+  const workspaceSources = (cell?.sources.filter(
+    (s): s is WorkspaceSource => s.kind === "workspace",
+  )) ?? [];
   const workspaceOnly = !directSource && workspaceSources.length > 0;
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState<WorkspaceSource | null>(null);
   const effective = new Set<PermissionLevel>(cell?.permissions ?? []);
   const directPerms = new Set<PermissionLevel>(directSource?.permissions ?? []);
 
@@ -48,6 +68,8 @@ export function InlinePermRow({
       setBusy(false);
     }
   }
+
+  const chipsClickable = !!onSaveWorkspace;
 
   return (
     <div
@@ -71,17 +93,33 @@ export function InlinePermRow({
         {sublabel && <div className="text-xs text-muted-foreground">{sublabel}</div>}
         {workspaceSources.length > 0 && (
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            {workspaceSources.map((s) => (
-              <span
-                key={s.kind === "workspace" ? s.workspaceId : "direct"}
-                className="inline-flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground"
-              >
-                <FolderTree className="h-2.5 w-2.5" />
-                {s.kind === "workspace" ? s.workspaceName : "direct"}
-                <span className="text-muted-foreground">·</span>
-                <span className="uppercase">{s.permissions.join(",") || "—"}</span>
-              </span>
-            ))}
+            {workspaceSources.map((s) => {
+              const chipClass =
+                "inline-flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground";
+              const inner = (
+                <>
+                  <FolderTree className="h-2.5 w-2.5" />
+                  {s.workspaceName}
+                  <span className="text-muted-foreground">·</span>
+                  <span className="uppercase">{s.permissions.join(",") || "—"}</span>
+                </>
+              );
+              return chipsClickable ? (
+                <button
+                  key={s.workspaceId}
+                  type="button"
+                  onClick={() => setEditing(s)}
+                  className={cn(chipClass, "transition-colors hover:bg-secondary/70 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1")}
+                  title={`Click to edit ${s.workspaceName} workspace permissions`}
+                >
+                  {inner}
+                </button>
+              ) : (
+                <span key={s.workspaceId} className={chipClass}>
+                  {inner}
+                </span>
+              );
+            })}
           </div>
         )}
       </div>
@@ -144,7 +182,131 @@ export function InlinePermRow({
           )}
         </div>
       </div>
+      {chipsClickable && editing && (
+        <WorkspacePermDialog
+          source={editing}
+          userLabel={userLabel ?? "this user"}
+          connectionLabel={connectionLabel ?? label}
+          onClose={() => setEditing(null)}
+          onSave={async (perms) => {
+            await onSaveWorkspace!(editing.workspaceId, perms);
+            setEditing(null);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function WorkspacePermDialog({
+  source,
+  userLabel,
+  connectionLabel,
+  onClose,
+  onSave,
+}: {
+  source: WorkspaceSource;
+  userLabel: string;
+  connectionLabel: string;
+  onClose: () => void;
+  onSave: (perms: PermissionLevel[]) => Promise<void>;
+}) {
+  const [selected, setSelected] = useState<Set<PermissionLevel>>(new Set(source.permissions));
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelected(new Set(source.permissions));
+    setError(null);
+  }, [source]);
+
+  function toggle(p: PermissionLevel) {
+    const next = new Set(selected);
+    if (next.has(p)) next.delete(p);
+    else next.add(p);
+    setSelected(next);
+  }
+
+  async function submit() {
+    setPending(true);
+    setError(null);
+    try {
+      await onSave(Array.from(selected));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed");
+      setPending(false);
+    }
+  }
+
+  const willRemove = selected.size === 0;
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            Edit {source.workspaceName} workspace permissions for {userLabel}
+          </DialogTitle>
+          <DialogDescription>
+            Set which data-level permissions {userLabel} has via the{" "}
+            <span className="font-medium">{source.workspaceName}</span> workspace.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+          <div>
+            This affects <span className="font-semibold">every connector</span> in{" "}
+            <span className="font-semibold">{source.workspaceName}</span>, not just{" "}
+            <span className="font-semibold">{connectionLabel}</span>.
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {LEVELS.map((p) => {
+            const on = selected.has(p);
+            return (
+              <button
+                key={p}
+                type="button"
+                onClick={() => toggle(p)}
+                disabled={pending}
+                className={cn(
+                  "inline-flex h-8 w-[100px] items-center justify-center gap-1 rounded-md border px-2 text-xs font-medium uppercase tracking-wide transition-colors",
+                  on
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border text-muted-foreground hover:bg-muted",
+                  pending && "opacity-60",
+                )}
+              >
+                <span className="inline-flex w-3 shrink-0 items-center justify-center">
+                  {on ? <Check className="h-3 w-3" /> : null}
+                </span>
+                {LEVEL_LABEL[p]}
+              </button>
+            );
+          })}
+        </div>
+        {willRemove && (
+          <p className="text-xs text-destructive">
+            Saving with no permissions selected will remove {userLabel} from{" "}
+            <span className="font-semibold">{source.workspaceName}</span> entirely.
+          </p>
+        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={submit}
+            disabled={pending}
+            variant={willRemove ? "destructive" : "default"}
+          >
+            {pending ? "Saving…" : willRemove ? "Remove from workspace" : "Save changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

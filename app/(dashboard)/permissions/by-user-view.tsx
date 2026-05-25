@@ -93,6 +93,19 @@ export function ByUserView({
     await onChange();
   }
 
+  async function saveWorkspaceGrant(userId: string, workspaceId: string, perms: PermissionLevel[]) {
+    const res = await fetch(`/api/workspaces/${workspaceId}/users/${userId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ permissions: perms }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error ?? `Request failed (${res.status})`);
+    }
+    await onChange();
+  }
+
   return (
     <div className="flex h-[calc(100vh-140px)] min-h-[520px]">
       {/* LEFT: user list */}
@@ -187,6 +200,7 @@ export function ByUserView({
             dataSources={data.dataSources}
             grants={grantsByUser.get(focusedUser.id) ?? []}
             onSave={(dsId, perms) => saveDirectGrant(focusedUser.id, dsId, perms)}
+            onSaveWorkspace={(wsId, perms) => saveWorkspaceGrant(focusedUser.id, wsId, perms)}
           />
         ) : (
           <EmptyHint />
@@ -262,11 +276,13 @@ function UserDetail({
   dataSources,
   grants,
   onSave,
+  onSaveWorkspace,
 }: {
   user: UserRow;
   dataSources: MatrixPayload["dataSources"];
   grants: GrantCell[];
   onSave: (dataSourceId: string, perms: PermissionLevel[]) => void | Promise<void>;
+  onSaveWorkspace: (workspaceId: string, perms: PermissionLevel[]) => void | Promise<void>;
 }) {
   const [search, setSearch] = useState("");
   const [hideEmpty, setHideEmpty] = useState(false);
@@ -322,6 +338,9 @@ function UserDetail({
               cell={cell}
               onSave={(perms) => onSave(ds.id, perms)}
               onRevokeDirect={() => onSave(ds.id, [])}
+              onSaveWorkspace={onSaveWorkspace}
+              userLabel={user.name}
+              connectionLabel={ds.name}
             />
           );
         })}
