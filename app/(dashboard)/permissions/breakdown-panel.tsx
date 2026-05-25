@@ -8,7 +8,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { LEVELS, type GrantCell, type GrantSource, type PermissionLevel } from "./permissions-types";
+import {
+  EFFECTIVE_LEVELS,
+  EFFECTIVE_LEVEL_LABEL,
+  effectiveLevelsFor,
+  expandEffectiveSet,
+  type EffectiveLevel,
+  type GrantCell,
+  type GrantSource,
+} from "./permissions-types";
 
 export function BreakdownPanel({
   user,
@@ -30,7 +38,9 @@ export function BreakdownPanel({
     (s): s is Extract<GrantSource, { kind: "direct" }> => s.kind === "direct",
   );
 
-  const [perms, setPerms] = useState<Set<PermissionLevel>>(new Set(directSource?.permissions ?? []));
+  const [perms, setPerms] = useState<Set<EffectiveLevel>>(
+    effectiveLevelsFor(directSource?.permissions ?? []),
+  );
   const [tablesCsv, setTablesCsv] = useState<string>(
     directSource?.allowedTables ? directSource.allowedTables.join(", ") : "",
   );
@@ -41,13 +51,13 @@ export function BreakdownPanel({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setPerms(new Set(directSource?.permissions ?? []));
+    setPerms(effectiveLevelsFor(directSource?.permissions ?? []));
     setTablesCsv(directSource?.allowedTables ? directSource.allowedTables.join(", ") : "");
     setTablesUnrestricted(!directSource || directSource.allowedTables === null);
     setError(null);
   }, [user.id, dataSource.id, directSource?.permissions?.join(","), directSource?.allowedTables?.join(",")]);
 
-  function toggle(p: PermissionLevel) {
+  function toggle(p: EffectiveLevel) {
     const next = new Set(perms);
     if (next.has(p)) next.delete(p);
     else next.add(p);
@@ -67,7 +77,7 @@ export function BreakdownPanel({
       const res = await fetch(`/api/users/${user.id}/data-sources/${dataSource.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ permissions: Array.from(perms), allowedTables }),
+        body: JSON.stringify({ permissions: expandEffectiveSet(perms), allowedTables }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -133,9 +143,9 @@ export function BreakdownPanel({
                     <span className="text-sm font-medium">{s.workspaceName}</span>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1">
-                    {s.permissions.map((p) => (
+                    {Array.from(effectiveLevelsFor(s.permissions)).map((p) => (
                       <Badge key={p} variant="success" className="uppercase">
-                        {p}
+                        {EFFECTIVE_LEVEL_LABEL[p]}
                       </Badge>
                     ))}
                   </div>
@@ -170,7 +180,7 @@ export function BreakdownPanel({
           <div className="space-y-2">
             <Label className="text-xs">Permissions</Label>
             <div className="flex gap-3">
-              {LEVELS.map((p) => (
+              {EFFECTIVE_LEVELS.map((p) => (
                 <label
                   key={p}
                   className={cn(
@@ -179,7 +189,7 @@ export function BreakdownPanel({
                   )}
                 >
                   <Checkbox checked={perms.has(p)} onCheckedChange={() => toggle(p)} />
-                  <span className="uppercase">{p}</span>
+                  <span className="uppercase">{EFFECTIVE_LEVEL_LABEL[p]}</span>
                 </label>
               ))}
             </div>

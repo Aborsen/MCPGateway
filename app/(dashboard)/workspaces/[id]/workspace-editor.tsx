@@ -16,21 +16,28 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TablesViewer } from "@/components/tables-viewer";
+import {
+  EFFECTIVE_LEVELS,
+  EFFECTIVE_LEVEL_LABEL,
+  effectiveLevelsFor,
+  expandEffectiveSet,
+  type EffectiveLevel,
+  type PermissionLevel,
+} from "@/app/(dashboard)/permissions/permissions-types";
 
 type DataSourceOption = { id: string; name: string; type: string };
 type UserOption = { id: string; name: string; email: string };
-
-type PermLevel = "select" | "insert" | "update" | "delete" | "execute";
 
 export type WorkspaceData = {
   id: string;
   name: string;
   description: string | null;
   dataSources: Array<{ dataSourceId: string; allowedTables: string[] | null }>;
-  users: Array<{ userId: string; permissions: PermLevel[] }>;
+  // Raw SQL-level perms as stored in WorkspaceUser.permissions. The editor
+  // groups them into View/Edit/Delete (EffectiveLevel) for the UI and
+  // re-expands on save.
+  users: Array<{ userId: string; permissions: PermissionLevel[] }>;
 };
-
-const PERMS = ["select", "insert", "update", "delete", "execute"] as const;
 
 export function WorkspaceEditor({
   workspace,
@@ -45,7 +52,14 @@ export function WorkspaceEditor({
   const [name, setName] = useState(workspace.name);
   const [description, setDescription] = useState(workspace.description ?? "");
   const [dataSources, setDataSources] = useState(workspace.dataSources);
-  const [users, setUsers] = useState(workspace.users);
+  // Internal state uses EffectiveLevel buckets. We convert on initial load
+  // and again on save.
+  const [users, setUsers] = useState<Array<{ userId: string; permissions: EffectiveLevel[] }>>(
+    workspace.users.map((u) => ({
+      userId: u.userId,
+      permissions: Array.from(effectiveLevelsFor(u.permissions)),
+    })),
+  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -117,11 +131,11 @@ export function WorkspaceEditor({
     if (exists) {
       setUsers(users.filter((u) => u.userId !== userId));
     } else {
-      setUsers([...users, { userId, permissions: ["select"] }]);
+      setUsers([...users, { userId, permissions: ["view"] }]);
     }
   }
 
-  function togglePermission(userId: string, perm: PermLevel) {
+  function togglePermission(userId: string, perm: EffectiveLevel) {
     setUsers(
       users.map((u) => {
         if (u.userId !== userId) return u;
@@ -146,7 +160,10 @@ export function WorkspaceEditor({
           name,
           description: description || null,
           dataSources,
-          users,
+          users: users.map((u) => ({
+            userId: u.userId,
+            permissions: expandEffectiveSet(u.permissions),
+          })),
         }),
       });
       if (!res.ok) {
@@ -347,13 +364,13 @@ export function WorkspaceEditor({
                   </Label>
                   {selected && (
                     <div className="flex gap-3">
-                      {PERMS.map((p) => (
+                      {EFFECTIVE_LEVELS.map((p) => (
                         <label key={p} className="flex items-center gap-1.5 text-xs">
                           <Checkbox
                             checked={selected.permissions.includes(p)}
                             onCheckedChange={() => togglePermission(u.id, p)}
                           />
-                          <span className="uppercase">{p}</span>
+                          <span className="uppercase">{EFFECTIVE_LEVEL_LABEL[p]}</span>
                         </label>
                       ))}
                     </div>

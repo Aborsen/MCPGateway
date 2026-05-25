@@ -12,7 +12,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { LEVELS, type DataSourceRow, type PermissionLevel, type UserRow } from "./permissions-types";
+import {
+  EFFECTIVE_LEVELS,
+  EFFECTIVE_LEVEL_LABEL,
+  expandEffectiveSet,
+  type DataSourceRow,
+  type EffectiveLevel,
+  type UserRow,
+} from "./permissions-types";
 
 type BulkBarProps = {
   kind: "users" | "dataSources";
@@ -27,12 +34,12 @@ export function BulkBar({ kind, subjectIds, subjectLabel, users, dataSources, on
   // When kind=users, subjectIds are user ids. We pick ONE dataSource to grant against.
   // When kind=dataSources, subjectIds are data source ids. We pick ONE user.
   const [counterpartId, setCounterpartId] = useState<string>("");
-  const [perms, setPerms] = useState<Set<PermissionLevel>>(new Set(["select"]));
+  const [perms, setPerms] = useState<Set<EffectiveLevel>>(new Set(["view"]));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
 
-  function toggle(p: PermissionLevel) {
+  function toggle(p: EffectiveLevel) {
     const next = new Set(perms);
     if (next.has(p)) next.delete(p);
     else next.add(p);
@@ -68,7 +75,7 @@ export function BulkBar({ kind, subjectIds, subjectLabel, users, dataSources, on
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  permissions: Array.from(perms),
+                  permissions: expandEffectiveSet(perms),
                   allowedTables: null,
                 }),
               };
@@ -129,13 +136,13 @@ export function BulkBar({ kind, subjectIds, subjectLabel, users, dataSources, on
         <div className="space-y-2">
           <Label className="text-xs uppercase tracking-wide text-muted-foreground">Permissions</Label>
           <div className="flex gap-2">
-            {LEVELS.map((p) => (
+            {EFFECTIVE_LEVELS.map((p) => (
               <label
                 key={p}
                 className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm"
               >
                 <Checkbox checked={perms.has(p)} onCheckedChange={() => toggle(p)} />
-                <span className="uppercase">{p}</span>
+                <span className="uppercase">{EFFECTIVE_LEVEL_LABEL[p]}</span>
               </label>
             ))}
           </div>

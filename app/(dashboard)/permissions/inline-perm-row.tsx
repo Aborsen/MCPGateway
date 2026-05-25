@@ -19,7 +19,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LEVELS, LEVEL_LABEL, type GrantCell, type GrantSource, type PermissionLevel } from "./permissions-types";
+import {
+  EFFECTIVE_LEVELS,
+  EFFECTIVE_LEVEL_LABEL,
+  effectiveLevelsFor,
+  expandEffectiveSet,
+  setEffective,
+  type EffectiveLevel,
+  type GrantCell,
+  type GrantSource,
+  type PermissionLevel,
+} from "./permissions-types";
 
 type WorkspaceSource = Extract<GrantSource, { kind: "workspace" }>;
 type EditingState = { source: WorkspaceSource; initialPerms: PermissionLevel[] };
@@ -54,30 +64,31 @@ export function InlinePermRow({
   const workspaceOnly = !directSource && workspaceSources.length > 0;
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<EditingState | null>(null);
-  const effective = new Set<PermissionLevel>(cell?.permissions ?? []);
-  const directPerms = new Set<PermissionLevel>(directSource?.permissions ?? []);
+  const effectiveLevels = effectiveLevelsFor(cell?.permissions ?? []);
+  const directEffectiveLevels = effectiveLevelsFor(directSource?.permissions ?? []);
+  // Keep the raw direct-perm array around for the toggle handler — applying
+  // a UI-level toggle returns a new raw array we POST/PUT to the backend.
+  const directPermsArr = directSource?.permissions ?? [];
 
   const chipsClickable = !!onSaveWorkspace;
   const canEditWorkspace = workspaceOnly && chipsClickable;
   const singleWorkspace = workspaceSources.length === 1 ? workspaceSources[0] : null;
 
-  function openWorkspaceEdit(source: WorkspaceSource, togglePerm?: PermissionLevel) {
-    const next = new Set(source.permissions);
-    if (togglePerm) {
-      if (next.has(togglePerm)) next.delete(togglePerm);
-      else next.add(togglePerm);
+  function openWorkspaceEdit(source: WorkspaceSource, toggleLevel?: EffectiveLevel) {
+    let next = source.permissions;
+    if (toggleLevel) {
+      const currentLevels = effectiveLevelsFor(source.permissions);
+      next = setEffective(source.permissions, toggleLevel, !currentLevels.has(toggleLevel));
     }
-    setEditing({ source, initialPerms: Array.from(next) });
+    setEditing({ source, initialPerms: next });
   }
 
-  async function toggleDirect(p: PermissionLevel) {
+  async function toggleDirect(level: EffectiveLevel) {
     if (workspaceOnly) return;
-    const next = new Set(directPerms);
-    if (next.has(p)) next.delete(p);
-    else next.add(p);
+    const next = setEffective(directPermsArr, level, !directEffectiveLevels.has(level));
     setBusy(true);
     try {
-      await onSave(Array.from(next));
+      await onSave(next);
     } finally {
       setBusy(false);
     }
@@ -108,12 +119,16 @@ export function InlinePermRow({
             {workspaceSources.map((s) => {
               const chipClass =
                 "group inline-flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground";
+              const sourceLevels = Array.from(effectiveLevelsFor(s.permissions));
+              const sourceLabel = sourceLevels.length
+                ? sourceLevels.map((l) => EFFECTIVE_LEVEL_LABEL[l]).join(",")
+                : "—";
               const inner = (
                 <>
                   <FolderTree className="h-2.5 w-2.5" />
                   {s.workspaceName}
                   <span className="text-muted-foreground">·</span>
-                  <span className="uppercase">{s.permissions.join(",") || "—"}</span>
+                  <span className="uppercase">{sourceLabel}</span>
                 </>
               );
               return chipsClickable ? (
@@ -137,18 +152,18 @@ export function InlinePermRow({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        {LEVELS.map((p) => {
-          const isEffective = effective.has(p);
-          const isDirect = directPerms.has(p);
+        {EFFECTIVE_LEVELS.map((p) => {
+          const isEffective = effectiveLevels.has(p);
+          const isDirect = directEffectiveLevels.has(p);
 
           const pillClass = cn(
             "inline-flex h-7 w-[88px] items-center justify-center gap-1 rounded-md border px-2 text-[11px] font-medium uppercase tracking-wide transition-colors",
             isDirect && "border-primary bg-primary text-primary-foreground",
             !isDirect && isEffective && !workspaceOnly && "border-success/60 bg-success/15 text-success",
-            !isDirect && isEffective && workspaceOnly && canEditWorkspace && "border-secondary-foreground/30 bg-secondary text-secondary-foreground hover:bg-secondary/70 cursor-pointer",
+            !isDirect && isEffective && workspaceOnly && canEditWorkspace && "border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer",
             !isDirect && isEffective && workspaceOnly && !canEditWorkspace && "border-border bg-muted/40 text-muted-foreground cursor-not-allowed",
             !isDirect && !isEffective && !workspaceOnly && "border-border text-muted-foreground hover:bg-muted",
-            !isDirect && !isEffective && workspaceOnly && canEditWorkspace && "border-dashed border-border text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer",
+            !isDirect && !isEffective && workspaceOnly && canEditWorkspace && "border-dashed border-primary/30 text-primary/70 hover:bg-primary/5 hover:text-primary cursor-pointer",
             !isDirect && !isEffective && workspaceOnly && !canEditWorkspace && "border-border/60 text-muted-foreground/60 cursor-not-allowed",
             busy && "opacity-60",
           );
@@ -156,14 +171,14 @@ export function InlinePermRow({
           const pillTitle = workspaceOnly
             ? canEditWorkspace
               ? singleWorkspace
-                ? `Via ${singleWorkspace.workspaceName}: ${LEVEL_LABEL[p]} — click to edit workspace permissions`
-                : `Via workspace: ${LEVEL_LABEL[p]} — click to pick which workspace to edit`
+                ? `Via ${singleWorkspace.workspaceName}: ${EFFECTIVE_LEVEL_LABEL[p]} — click to edit workspace permissions`
+                : `Via workspace: ${EFFECTIVE_LEVEL_LABEL[p]} — click to pick which workspace to edit`
               : `Managed by Workspace — edit on the workspace page`
             : isDirect
-              ? `Direct grant: ${LEVEL_LABEL[p]}`
+              ? `Direct grant: ${EFFECTIVE_LEVEL_LABEL[p]}`
               : isEffective
-                ? `Via workspace: ${LEVEL_LABEL[p]} (click to add direct grant)`
-                : `Click to grant ${LEVEL_LABEL[p]}`;
+                ? `Via workspace: ${EFFECTIVE_LEVEL_LABEL[p]} (click to add direct grant)`
+                : `Click to grant ${EFFECTIVE_LEVEL_LABEL[p]}`;
 
           const pillContent = (
             <>
@@ -172,7 +187,7 @@ export function InlinePermRow({
               <span className="inline-flex w-3 shrink-0 items-center justify-center">
                 {isEffective ? <Check className="h-3 w-3" /> : null}
               </span>
-              {LEVEL_LABEL[p]}
+              {EFFECTIVE_LEVEL_LABEL[p]}
             </>
           );
 
@@ -273,16 +288,16 @@ function WorkspacePermDialog({
   onClose: () => void;
   onSave: (perms: PermissionLevel[]) => Promise<void>;
 }) {
-  const [selected, setSelected] = useState<Set<PermissionLevel>>(new Set(initialPerms));
+  const [selected, setSelected] = useState<Set<EffectiveLevel>>(effectiveLevelsFor(initialPerms));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setSelected(new Set(initialPerms));
+    setSelected(effectiveLevelsFor(initialPerms));
     setError(null);
   }, [source, initialPerms]);
 
-  function toggle(p: PermissionLevel) {
+  function toggle(p: EffectiveLevel) {
     const next = new Set(selected);
     if (next.has(p)) next.delete(p);
     else next.add(p);
@@ -293,14 +308,14 @@ function WorkspacePermDialog({
     setPending(true);
     setError(null);
     try {
-      await onSave(Array.from(selected));
+      await onSave(expandEffectiveSet(selected));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
       setPending(false);
     }
   }
 
-  const original = new Set(source.permissions);
+  const original = effectiveLevelsFor(source.permissions);
   const willRemove = selected.size === 0;
   const changed =
     selected.size !== original.size ||
@@ -327,7 +342,7 @@ function WorkspacePermDialog({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {LEVELS.map((p) => {
+          {EFFECTIVE_LEVELS.map((p) => {
             const on = selected.has(p);
             const wasOn = original.has(p);
             const diff = on !== wasOn;
@@ -340,9 +355,9 @@ function WorkspacePermDialog({
                 title={
                   diff
                     ? on
-                      ? `${LEVEL_LABEL[p]} — will be added`
-                      : `${LEVEL_LABEL[p]} — will be removed`
-                    : LEVEL_LABEL[p]
+                      ? `${EFFECTIVE_LEVEL_LABEL[p]} — will be added`
+                      : `${EFFECTIVE_LEVEL_LABEL[p]} — will be removed`
+                    : EFFECTIVE_LEVEL_LABEL[p]
                 }
                 className={cn(
                   "relative inline-flex h-8 w-[100px] items-center justify-center gap-1 rounded-md border px-2 text-xs font-medium uppercase tracking-wide transition-colors",
@@ -356,7 +371,7 @@ function WorkspacePermDialog({
                 <span className="inline-flex w-3 shrink-0 items-center justify-center">
                   {on ? <Check className="h-3 w-3" /> : null}
                 </span>
-                {LEVEL_LABEL[p]}
+                {EFFECTIVE_LEVEL_LABEL[p]}
               </button>
             );
           })}
@@ -390,15 +405,16 @@ export function GrantBadges({ cell }: { cell: GrantCell | undefined }) {
   if (!cell || cell.permissions.length === 0) {
     return <span className="text-xs text-muted-foreground">No access</span>;
   }
+  const active = effectiveLevelsFor(cell.permissions);
   return (
     <div className="flex items-center gap-1">
-      {LEVELS.map((p) => (
+      {EFFECTIVE_LEVELS.map((p) => (
         <Badge
           key={p}
-          variant={cell.permissions.includes(p) ? "success" : "outline"}
-          className={cn("uppercase", !cell.permissions.includes(p) && "opacity-30")}
+          variant={active.has(p) ? "success" : "outline"}
+          className={cn("uppercase", !active.has(p) && "opacity-30")}
         >
-          {cell.permissions.includes(p) ? <Check className="h-3 w-3" /> : null}
+          {active.has(p) ? <Check className="h-3 w-3" /> : null}
           {p[0]}
         </Badge>
       ))}

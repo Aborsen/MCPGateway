@@ -7,10 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { BreakdownPanel } from "./breakdown-panel";
 import {
-  LEVELS,
+  EFFECTIVE_LEVELS,
+  EFFECTIVE_LEVEL_SHORT,
+  effectiveLevelsFor,
+  type EffectiveLevel,
   type GrantCell,
   type MatrixPayload,
-  type PermissionLevel,
 } from "./permissions-types";
 
 const MAX_CELLS = 800; // visual ceiling for the matrix tab
@@ -101,9 +103,12 @@ export function MatrixView({
                     >
                       {hasAny ? (
                         <div className="flex items-center gap-1">
-                          {LEVELS.map((p) => (
-                            <PermBadge key={p} level={p} active={cell!.permissions.includes(p)} />
-                          ))}
+                          {(() => {
+                            const active = effectiveLevelsFor(cell!.permissions);
+                            return EFFECTIVE_LEVELS.map((p) => (
+                              <PermBadge key={p} level={p} active={active.has(p)} />
+                            ));
+                          })()}
                           {hasDirect && (
                             <span
                               title="Has a direct grant"
@@ -138,14 +143,14 @@ export function MatrixView({
   );
 }
 
-function PermBadge({ level, active }: { level: PermissionLevel; active: boolean }) {
+function PermBadge({ level, active }: { level: EffectiveLevel; active: boolean }) {
   return (
     <Badge
       variant={active ? "success" : "outline"}
       className={cn("uppercase", !active && "opacity-30")}
     >
       {active ? <Check className="h-3 w-3" /> : <Minus className="h-3 w-3" />}
-      {level[0]}
+      {EFFECTIVE_LEVEL_SHORT[level]}
     </Badge>
   );
 }
