@@ -252,6 +252,71 @@ export function isRawQueryTool(toolName: string): boolean {
   return SQL_LIKE_TOOLS.has(toolName);
 }
 
+// Argument keys that commonly carry a SQL / SOQL / query string. Order is
+// preference order: the first match wins. SKyvia uses `sql`; vendors may
+// use `query`/`statement`/`soql`/`command`.
+const SQL_ARG_KEYS = ["sql", "query", "statement", "soql", "command"];
+
+// DDL, stored-proc, and privilege keywords that can't be safely
+// validated by table-name extraction. If any appear in a SQL string the
+// caller submits, we refuse outright when restrictions are in effect.
+const SQL_DANGEROUS_KEYWORDS =
+  /\b(DROP|TRUNCATE|ALTER|CREATE|EXEC(?:UTE)?|CALL|GRANT|REVOKE|ATTACH|DETACH)\b/i;
+
+// Pull the SQL string out of a tool's arguments. Returns null if none of
+// the recognised keys is set to a string.
+export function extractSqlFromArgs(args: Record<string, unknown>): string | null {
+  for (const k of SQL_ARG_KEYS) {
+    const v = args[k];
+    if (typeof v === "string" && v.trim().length > 0) return v;
+  }
+  return null;
+}
+
+// Best-effort SQL table extraction. Returns:
+//   - string[] : the set of distinct table identifiers referenced via
+//                FROM / JOIN / INTO / UPDATE / MERGE INTO clauses.
+//   - null     : the SQL contains a dangerous keyword (DDL / proc /
+//                privilege op) OR no recognisable table references at
+//                all. The caller MUST treat null as "refuse, can't
+//                validate" — this is the fail-closed mode for queries
+//                we don't understand (JQL, stored procs, etc.).
+//
+// Stripping rules applied in order:
+//   1. Block comments  /* ... */
+//   2. Line comments   -- ... \n
+//   3. String literals 'foo from bar' — replaced with empty quotes so
+//      they can't hide FROM/JOIN as fake table references.
+//
+// Identifier normalisation: a match like `dbo."Issues"` becomes `Issues`
+// (last dot-separated segment, surrounding quotes stripped).
+export function extractTablesFromSql(sql: string): string[] | null {
+  if (!sql || typeof sql !== "string") return null;
+
+  const cleaned = sql
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/--[^\n]*/g, " ");
+
+  if (SQL_DANGEROUS_KEYWORDS.test(cleaned)) return null;
+
+  const noStrings = cleaned.replace(/'(?:[^'\\]|\\.|'')*'/g, "''");
+
+  const re =
+    /(?:^|[\s,(])\s*(?:FROM|JOIN|INTO|UPDATE|MERGE\s+INTO)\s+([\w$."'`[\]]+)/gi;
+  const tables = new Set<string>();
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(noStrings))) {
+    const raw = m[1];
+    const last = raw.split(".").pop() ?? raw;
+    const normalised = last.replace(/^["`[]|["`\]]$/g, "");
+    if (normalised && /^[\w$]+$/.test(normalised)) {
+      tables.add(normalised);
+    }
+  }
+  if (tables.size === 0) return null;
+  return Array.from(tables);
+}
+
 // True when a tool can target any table — execute-level tools (Skyvia's
 // `Execute`, raw SQL `query`, `run_soql`, `run_apex`, vendor `RunReport`,
 // etc.) have no observable table argument we can validate, so when any

@@ -8,6 +8,8 @@ import {
   getToolLevel,
   classifyToolByName,
   extractTableFromArgs,
+  extractSqlFromArgs,
+  extractTablesFromSql,
   isTableBypassTool,
   filterListedTablesText,
   LIST_TABLES_TOOL_NAMES,
@@ -267,10 +269,30 @@ export async function POST(request: Request, { params }: RouteCtx) {
 
         if (connector.allowedTables) {
           if (isTableBypassTool(toolName, required)) {
-            throw new JsonRpcException(
-              ERROR_CODES.FORBIDDEN,
-              `Tool '${toolName}' (${required}) can target any table — refused because this workspace restricts tables to: ${connector.allowedTables.join(", ")}.`,
+            const sql = extractSqlFromArgs(args);
+            if (!sql) {
+              throw new JsonRpcException(
+                ERROR_CODES.FORBIDDEN,
+                `Tool '${toolName}' (${required}) takes no recognised SQL argument — refused under workspace allowlist: ${connector.allowedTables.join(", ")}.`,
+              );
+            }
+            const refs = extractTablesFromSql(sql);
+            if (refs === null) {
+              throw new JsonRpcException(
+                ERROR_CODES.FORBIDDEN,
+                `Tool '${toolName}' (${required}) contains DDL, a stored procedure, or no recognisable table reference — refused under workspace allowlist: ${connector.allowedTables.join(", ")}.`,
+              );
+            }
+            const allowedSet = new Set(
+              connector.allowedTables.map((a) => a.toLowerCase()),
             );
+            const notAllowed = refs.filter((t) => !allowedSet.has(t.toLowerCase()));
+            if (notAllowed.length > 0) {
+              throw new JsonRpcException(
+                ERROR_CODES.FORBIDDEN,
+                `Tool '${toolName}' references table(s) not in the workspace allowlist: ${notAllowed.join(", ")}. Allowed: ${connector.allowedTables.join(", ")}.`,
+              );
+            }
           }
           const requestedTable = extractTableFromArgs(args);
           if (requestedTable && !connector.allowedTables.includes(requestedTable)) {
@@ -396,11 +418,8 @@ async function aggregateTools(access: UserAccess[]) {
             | undefined;
           const required = seeded ?? classifyToolByName(t.name);
           if (!a.permissions.has(required)) return false;
-          // Hide table-bypass tools (execute-level or hard-coded raw SQL)
-          // whenever any table restriction is in effect on this workspace.
-          const hasRestrictions =
-            a.allowedTables !== null || (a.blockedTables?.length ?? 0) > 0;
-          if (hasRestrictions && isTableBypassTool(t.name, required)) return false;
+          // Execute-level tools stay visible — SQL validation at
+          // tools/call enforces the workspace allowlist.
           return true;
         })
         .map((t) => ({

@@ -8,6 +8,8 @@ import {
   getToolLevel,
   classifyToolByName,
   extractTableFromArgs,
+  extractSqlFromArgs,
+  extractTablesFromSql,
   isTableBypassTool,
   filterListedTablesText,
   dropBlockedTablesText,
@@ -255,17 +257,36 @@ export async function POST(request: Request) {
         }
 
         // Connection-wide blocklist runs first — it's the admin's hard kill
-        // switch. A table-bypass tool (execute-level or known raw SQL) is
-        // refused outright when blockedTables is in effect: we have no way
-        // to know which table the SQL targets, so we can't safely allow
-        // any of it.
+        // switch. For a table-bypass tool (execute-level / raw SQL) we now
+        // try to extract the table references from the SQL string itself;
+        // if any referenced table is blocked the call is refused. We fall
+        // closed when extraction fails (DDL, stored proc, no recognisable
+        // FROM/JOIN/INTO, or no SQL argument at all).
         const blocked = connector.blockedTables ?? [];
         if (blocked.length > 0) {
           if (isTableBypassTool(toolName, required)) {
-            throw new JsonRpcException(
-              ERROR_CODES.FORBIDDEN,
-              `Tool '${toolName}' (${required}) can target any table — refused because this connection blocks ${blocked.length} table(s).`,
-            );
+            const sql = extractSqlFromArgs(args);
+            if (!sql) {
+              throw new JsonRpcException(
+                ERROR_CODES.FORBIDDEN,
+                `Tool '${toolName}' (${required}) takes no recognised SQL argument — refused while this connection has a table blocklist.`,
+              );
+            }
+            const refs = extractTablesFromSql(sql);
+            if (refs === null) {
+              throw new JsonRpcException(
+                ERROR_CODES.FORBIDDEN,
+                `Tool '${toolName}' (${required}) contains DDL, a stored procedure, or no recognisable table reference — refused while this connection has a table blocklist.`,
+              );
+            }
+            const blockedSet = new Set(blocked.map((b) => b.toLowerCase()));
+            const hits = refs.filter((t) => blockedSet.has(t.toLowerCase()));
+            if (hits.length > 0) {
+              throw new JsonRpcException(
+                ERROR_CODES.FORBIDDEN,
+                `Tool '${toolName}' references blocked table(s): ${hits.join(", ")}.`,
+              );
+            }
           }
           const requestedTable = extractTableFromArgs(args);
           if (requestedTable && blocked.includes(requestedTable)) {
@@ -278,10 +299,30 @@ export async function POST(request: Request) {
 
         if (connector.allowedTables) {
           if (isTableBypassTool(toolName, required)) {
-            throw new JsonRpcException(
-              ERROR_CODES.FORBIDDEN,
-              `Tool '${toolName}' (${required}) can target any table — refused because this workspace restricts tables to: ${connector.allowedTables.join(", ")}.`,
+            const sql = extractSqlFromArgs(args);
+            if (!sql) {
+              throw new JsonRpcException(
+                ERROR_CODES.FORBIDDEN,
+                `Tool '${toolName}' (${required}) takes no recognised SQL argument — refused under workspace allowlist: ${connector.allowedTables.join(", ")}.`,
+              );
+            }
+            const refs = extractTablesFromSql(sql);
+            if (refs === null) {
+              throw new JsonRpcException(
+                ERROR_CODES.FORBIDDEN,
+                `Tool '${toolName}' (${required}) contains DDL, a stored procedure, or no recognisable table reference — refused under workspace allowlist: ${connector.allowedTables.join(", ")}.`,
+              );
+            }
+            const allowedSet = new Set(
+              connector.allowedTables.map((a) => a.toLowerCase()),
             );
+            const notAllowed = refs.filter((t) => !allowedSet.has(t.toLowerCase()));
+            if (notAllowed.length > 0) {
+              throw new JsonRpcException(
+                ERROR_CODES.FORBIDDEN,
+                `Tool '${toolName}' references table(s) not in the workspace allowlist: ${notAllowed.join(", ")}. Allowed: ${connector.allowedTables.join(", ")}.`,
+              );
+            }
           }
           const requestedTable = extractTableFromArgs(args);
           if (requestedTable && !connector.allowedTables.includes(requestedTable)) {
@@ -415,12 +456,11 @@ async function aggregateTools(access: UserAccess[]) {
             | undefined;
           const required = seeded ?? classifyToolByName(t.name);
           if (!a.permissions.has(required)) return false;
-          // Hide table-bypass tools (execute-level or hard-coded raw SQL)
-          // whenever any table restriction is in effect — they can target
-          // any table the upstream exposes regardless of the allowlist.
-          const hasRestrictions =
-            a.allowedTables !== null || (a.blockedTables?.length ?? 0) > 0;
-          if (hasRestrictions && isTableBypassTool(t.name, required)) return false;
+          // Execute-level / table-bypass tools stay visible even when
+          // restrictions are in effect — the SQL-validation step at
+          // tools/call refuses calls that touch disallowed tables. This
+          // mirrors the per-arg ObjectInfo pattern (visible in list,
+          // validated at call time).
           return true;
         })
         .map((t) => ({
