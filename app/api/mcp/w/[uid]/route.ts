@@ -8,7 +8,7 @@ import {
   getToolLevel,
   classifyToolByName,
   extractTableFromArgs,
-  isRawQueryTool,
+  isTableBypassTool,
   filterListedTablesText,
   LIST_TABLES_TOOL_NAMES,
   type UserAccess,
@@ -266,10 +266,10 @@ export async function POST(request: Request, { params }: RouteCtx) {
         }
 
         if (connector.allowedTables) {
-          if (isRawQueryTool(toolName)) {
+          if (isTableBypassTool(toolName, required)) {
             throw new JsonRpcException(
               ERROR_CODES.FORBIDDEN,
-              `Raw query tool '${toolName}' is blocked because this workspace restricts tables.`,
+              `Tool '${toolName}' (${required}) can target any table — refused because this workspace restricts tables to: ${connector.allowedTables.join(", ")}.`,
             );
           }
           const requestedTable = extractTableFromArgs(args);
@@ -396,7 +396,11 @@ async function aggregateTools(access: UserAccess[]) {
             | undefined;
           const required = seeded ?? classifyToolByName(t.name);
           if (!a.permissions.has(required)) return false;
-          if (a.allowedTables && isRawQueryTool(t.name)) return false;
+          // Hide table-bypass tools (execute-level or hard-coded raw SQL)
+          // whenever any table restriction is in effect on this workspace.
+          const hasRestrictions =
+            a.allowedTables !== null || (a.blockedTables?.length ?? 0) > 0;
+          if (hasRestrictions && isTableBypassTool(t.name, required)) return false;
           return true;
         })
         .map((t) => ({

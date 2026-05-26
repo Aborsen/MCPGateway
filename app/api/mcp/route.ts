@@ -8,7 +8,7 @@ import {
   getToolLevel,
   classifyToolByName,
   extractTableFromArgs,
-  isRawQueryTool,
+  isTableBypassTool,
   filterListedTablesText,
   dropBlockedTablesText,
   LIST_TABLES_TOOL_NAMES,
@@ -255,14 +255,16 @@ export async function POST(request: Request) {
         }
 
         // Connection-wide blocklist runs first — it's the admin's hard kill
-        // switch. A raw-query tool with any blocked tables in scope is
-        // refused outright (no way to know which table the SQL targets).
+        // switch. A table-bypass tool (execute-level or known raw SQL) is
+        // refused outright when blockedTables is in effect: we have no way
+        // to know which table the SQL targets, so we can't safely allow
+        // any of it.
         const blocked = connector.blockedTables ?? [];
         if (blocked.length > 0) {
-          if (isRawQueryTool(toolName)) {
+          if (isTableBypassTool(toolName, required)) {
             throw new JsonRpcException(
               ERROR_CODES.FORBIDDEN,
-              `Raw query tool '${toolName}' is blocked because this connection blocks ${blocked.length} table(s).`,
+              `Tool '${toolName}' (${required}) can target any table — refused because this connection blocks ${blocked.length} table(s).`,
             );
           }
           const requestedTable = extractTableFromArgs(args);
@@ -275,10 +277,10 @@ export async function POST(request: Request) {
         }
 
         if (connector.allowedTables) {
-          if (isRawQueryTool(toolName)) {
+          if (isTableBypassTool(toolName, required)) {
             throw new JsonRpcException(
               ERROR_CODES.FORBIDDEN,
-              `Raw query tool '${toolName}' is blocked because this workspace restricts tables.`,
+              `Tool '${toolName}' (${required}) can target any table — refused because this workspace restricts tables to: ${connector.allowedTables.join(", ")}.`,
             );
           }
           const requestedTable = extractTableFromArgs(args);
@@ -413,7 +415,12 @@ async function aggregateTools(access: UserAccess[]) {
             | undefined;
           const required = seeded ?? classifyToolByName(t.name);
           if (!a.permissions.has(required)) return false;
-          if (a.allowedTables && isRawQueryTool(t.name)) return false;
+          // Hide table-bypass tools (execute-level or hard-coded raw SQL)
+          // whenever any table restriction is in effect — they can target
+          // any table the upstream exposes regardless of the allowlist.
+          const hasRestrictions =
+            a.allowedTables !== null || (a.blockedTables?.length ?? 0) > 0;
+          if (hasRestrictions && isTableBypassTool(t.name, required)) return false;
           return true;
         })
         .map((t) => ({

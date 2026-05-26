@@ -252,6 +252,21 @@ export function isRawQueryTool(toolName: string): boolean {
   return SQL_LIKE_TOOLS.has(toolName);
 }
 
+// True when a tool can target any table — execute-level tools (Skyvia's
+// `Execute`, raw SQL `query`, `run_soql`, `run_apex`, vendor `RunReport`,
+// etc.) have no observable table argument we can validate, so when any
+// table restriction (allowedTables / blockedTables) is in play they must
+// be refused outright. We trust the resolved level (admin override or the
+// classifyToolByName heuristic) plus the hard-coded SQL_LIKE_TOOLS list
+// as a backstop for names the heuristic still maps to `select` (mainly
+// raw `query`).
+export function isTableBypassTool(
+  toolName: string,
+  resolvedLevel: PermissionLevel,
+): boolean {
+  return resolvedLevel === "execute" || isRawQueryTool(toolName);
+}
+
 export function filterListedTablesPayload(
   payload: unknown,
   allowedTables: string[],
