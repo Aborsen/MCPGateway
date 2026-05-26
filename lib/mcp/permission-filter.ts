@@ -295,13 +295,19 @@ const NAME_FIELDS = [
 
 // Filters a list-tables tool's text response down to only the allowed tables.
 // Handles JSON (array of strings, array of objects with a name field,
-// wrapped { objects/tables/results: [] }) and CSV (header + rows). Returns
-// the original text unchanged if no shape matches — better to over-show
-// than corrupt the response.
+// wrapped { objects/tables/results: [] }), Markdown pipe-tables (Skyvia's
+// default `responseFormat: "Markdown"` output), and CSV (header + rows).
+// Returns the original text unchanged if no shape matches — better to
+// over-show than corrupt the response.
 export function filterListedTablesText(raw: string, allowed: string[]): string {
   if (!raw) return raw;
   const allowedLower = new Set(allowed.map((t) => t.toLowerCase()));
-  return filterAsJson(raw, allowedLower, "allow") ?? filterAsCsv(raw, allowedLower, "allow") ?? raw;
+  return (
+    filterAsJson(raw, allowedLower, "allow") ??
+    filterAsMarkdownTable(raw, allowedLower, "allow") ??
+    filterAsCsv(raw, allowedLower, "allow") ??
+    raw
+  );
 }
 
 // Inverse — drop blocked tables from a list response. Used by the
@@ -309,7 +315,12 @@ export function filterListedTablesText(raw: string, allowed: string[]): string {
 export function dropBlockedTablesText(raw: string, blocked: string[]): string {
   if (!raw || blocked.length === 0) return raw;
   const blockedLower = new Set(blocked.map((t) => t.toLowerCase()));
-  return filterAsJson(raw, blockedLower, "deny") ?? filterAsCsv(raw, blockedLower, "deny") ?? raw;
+  return (
+    filterAsJson(raw, blockedLower, "deny") ??
+    filterAsMarkdownTable(raw, blockedLower, "deny") ??
+    filterAsCsv(raw, blockedLower, "deny") ??
+    raw
+  );
 }
 
 type Mode = "allow" | "deny";
@@ -375,4 +386,85 @@ function filterAsCsv(raw: string, set: Set<string>, mode: Mode): string | null {
     if (name && keep(mode, set, name.toLowerCase())) out.push(lines[i]);
   }
   return out.join("\n");
+}
+
+// Markdown pipe-table parser. Skyvia's default `responseFormat: "Markdown"`
+// emits tables like:
+//
+//   | fullName | Description       |
+//   | -------- | ----------------- |
+//   | Issues   | Atlassian issues  |
+//   | Projects | Project metadata  |
+//
+// We find the header row, locate a name column (matching NAME_FIELDS),
+// preserve the header + separator rows, and filter the data rows. Lines
+// that don't start with `|` are passed through unchanged (so any prose
+// around the table survives).
+function filterAsMarkdownTable(raw: string, set: Set<string>, mode: Mode): string | null {
+  const lines = raw.split(/\r?\n/);
+  // Find the first table-looking block.
+  let headerIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) continue;
+    // The next non-empty line must be a separator row (cells of dashes/colons).
+    const next = (lines[i + 1] ?? "").trim();
+    if (!next.startsWith("|")) continue;
+    const sepCells = splitMdRow(next);
+    if (sepCells.length === 0) continue;
+    if (sepCells.every((c) => /^:?-+:?$/.test(c.trim()))) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx < 0) return null;
+
+  const headers = splitMdRow(lines[headerIdx]);
+  const nameIdx = headers.findIndex((h) => NAME_FIELDS.includes(h.trim()));
+  if (nameIdx < 0) return null;
+
+  const sepIdx = headerIdx + 1;
+  const out: string[] = lines.slice(0, sepIdx + 1); // prose + header + separator
+  for (let i = sepIdx + 1; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    // Once we hit a non-table line, dump the rest of the document as-is
+    // (Markdown often has prose after the table).
+    if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) {
+      out.push(...lines.slice(i));
+      break;
+    }
+    const cells = splitMdRow(line);
+    const name = cells[nameIdx]?.trim();
+    if (name && keep(mode, set, name.toLowerCase())) out.push(line);
+  }
+  return out.join("\n");
+}
+
+// Split a Markdown pipe-table row into its cells. Strips the leading and
+// trailing pipes and handles escaped pipes (`\|`) which Skyvia uses when
+// a cell value itself contains a `|`.
+function splitMdRow(row: string): string[] {
+  const trimmed = row.trim();
+  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return [];
+  const inner = trimmed.slice(1, -1);
+  // Split on unescaped pipes. \| is escaped; everything else is a separator.
+  const cells: string[] = [];
+  let buf = "";
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (ch === "\\" && inner[i + 1] === "|") {
+      buf += "|";
+      i++;
+      continue;
+    }
+    if (ch === "|") {
+      cells.push(buf);
+      buf = "";
+      continue;
+    }
+    buf += ch;
+  }
+  cells.push(buf);
+  return cells;
 }
