@@ -263,12 +263,30 @@ const SQL_ARG_KEYS = ["sql", "query", "statement", "soql", "command"];
 const SQL_DANGEROUS_KEYWORDS =
   /\b(DROP|TRUNCATE|ALTER|CREATE|EXEC(?:UTE)?|CALL|GRANT|REVOKE|ATTACH|DETACH)\b/i;
 
-// Pull the SQL string out of a tool's arguments. Returns null if none of
-// the recognised keys is set to a string.
+// Wrapper keys we look inside one level deep when the SQL isn't at the
+// top of the arguments object. Skyvia's MCP wraps the request payload
+// under `body` (so the shape is `arguments.body.sql`); some other
+// vendors use `request` or `params`. Each is checked in order; first
+// match wins.
+const SQL_WRAPPER_KEYS = ["body", "request", "params"];
+
+// Pull the SQL string out of a tool's arguments. Checks the top level
+// first (`arguments.sql`, `arguments.query`, …), then looks one level
+// deep under common wrapper keys (`arguments.body.sql`, etc.). Returns
+// null if no recognised key holds a non-empty string.
 export function extractSqlFromArgs(args: Record<string, unknown>): string | null {
   for (const k of SQL_ARG_KEYS) {
     const v = args[k];
     if (typeof v === "string" && v.trim().length > 0) return v;
+  }
+  for (const wrapper of SQL_WRAPPER_KEYS) {
+    const w = args[wrapper];
+    if (!w || typeof w !== "object") continue;
+    const inner = w as Record<string, unknown>;
+    for (const k of SQL_ARG_KEYS) {
+      const v = inner[k];
+      if (typeof v === "string" && v.trim().length > 0) return v;
+    }
   }
   return null;
 }
