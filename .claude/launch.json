@@ -4,8 +4,52 @@
     {
       "name": "next-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000
+    },
+    {
+      "name": "mouse-flow-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "poc/mouse-flow/web",
+        "run",
+        "dev:mock"
+      ],
+      "port": 4400
+    },
+    {
+      "name": "popup-harness",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/victorg/AppData/Local/Temp/claude/D--AI-Connecitivty/4bddc4d1-6fa5-420b-9d8c-af18b7e30631/scratchpad/popup-harness.mjs",
+        "4322"
+      ],
+      "port": 4322
+    },
+    {
+      "name": "scratchpad",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/victorg/AppData/Local/Temp/claude/D--AI-Connecitivty/4bddc4d1-6fa5-420b-9d8c-af18b7e30631/scratchpad/static-server.mjs",
+        "C:/Users/victorg/AppData/Local/Temp/claude/D--AI-Connecitivty/4bddc4d1-6fa5-420b-9d8c-af18b7e30631/scratchpad/",
+        "4323"
+      ],
+      "port": 4323
+    },
+    {
+      "name": "mouse-flow-live",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "poc/mouse-flow/web",
+        "run",
+        "dev"
+      ],
+      "port": 4400
     }
   ]
 }
